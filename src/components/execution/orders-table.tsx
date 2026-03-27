@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import type { Order, OrderStatus } from "@/types/execution";
+import type { NormalizedOrder as Order, OrderStatus } from "@/types/execution";
 
 interface OrdersTableProps {
   orders: Order[];
@@ -8,9 +8,11 @@ interface OrdersTableProps {
 const STATUS_STYLES: Record<OrderStatus, { bg: string; text: string }> = {
   pending: { bg: "bg-warning/10", text: "text-warning" },
   working: { bg: "bg-primary/10", text: "text-primary" },
+  partially_filled: { bg: "bg-primary/10", text: "text-primary" },
   filled: { bg: "bg-success/10", text: "text-success" },
   cancelled: { bg: "bg-muted", text: "text-muted-foreground" },
   rejected: { bg: "bg-danger/10", text: "text-danger" },
+  expired: { bg: "bg-muted", text: "text-muted-foreground" },
 };
 
 export function OrdersTable({ orders }: OrdersTableProps) {

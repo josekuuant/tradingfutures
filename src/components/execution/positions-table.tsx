@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import type { Position } from "@/types/execution";
+import type { NormalizedPosition as Position } from "@/types/execution";
 
 interface PositionsTableProps {
   positions: Position[];

@@ -1,12 +1,30 @@
-// ─── Execution mode ──────────────────────────────────────────
+// ─── Execution Provider Identity ─────────────────────────────
 
-export type ExecutionMode = "disabled" | "monitor" | "paper" | "manual_confirm";
+export const EXECUTION_PROVIDERS = [
+  "tradovate",
+  "rithmic",
+  "ninjatrader",
+  "topstepx",
+] as const;
 
-// ─── Account ─────────────────────────────────────────────────
+export type ExecutionProvider = (typeof EXECUTION_PROVIDERS)[number];
 
-export interface AccountInfo {
+// ─── Execution Modes ─────────────────────────────────────────
+
+export type ExecutionMode =
+  | "disabled"
+  | "monitor"        // read-only: account, positions, orders
+  | "dry_run"         // simulates execution, logs but doesn't send
+  | "manual_approval" // queues order, requires explicit confirm
+  | "semi_auto"       // executes if all guardrails pass
+  | "full_auto";      // executes automatically (dangerous)
+
+// ─── Normalized Account ──────────────────────────────────────
+
+export interface NormalizedAccount {
   id: string;
   name: string;
+  provider: ExecutionProvider;
   balance: number;
   cashBalance: number;
   marginUsed: number;
@@ -14,13 +32,15 @@ export interface AccountInfo {
   unrealizedPnl: number;
   netLiq: number;
   currency: string;
-  environment: "sandbox" | "production";
+  environment: "demo" | "sandbox" | "production";
 }
 
-// ─── Positions ───────────────────────────────────────────────
+// ─── Normalized Position ─────────────────────────────────────
 
-export interface Position {
+export interface NormalizedPosition {
   id: string;
+  provider: ExecutionProvider;
+  accountId: string;
   instrument: string;
   side: "long" | "short" | "flat";
   quantity: number;
@@ -31,14 +51,31 @@ export interface Position {
   timestamp: string;
 }
 
-// ─── Orders ──────────────────────────────────────────────────
+// ─── Normalized Order ────────────────────────────────────────
 
-export type OrderStatus = "pending" | "working" | "filled" | "cancelled" | "rejected";
+export type OrderStatus =
+  | "pending"
+  | "working"
+  | "partially_filled"
+  | "filled"
+  | "cancelled"
+  | "rejected"
+  | "expired";
+
 export type OrderSide = "buy" | "sell";
-export type OrderType = "market" | "limit" | "stop" | "stop_limit";
 
-export interface Order {
+export type OrderType =
+  | "market"
+  | "limit"
+  | "stop"
+  | "stop_limit";
+
+export interface NormalizedOrder {
   id: string;
+  provider: ExecutionProvider;
+  providerOrderId: string; // native ID from the broker
+  idempotencyKey: string;
+  accountId: string;
   instrument: string;
   side: OrderSide;
   type: OrderType;
@@ -52,7 +89,7 @@ export interface Order {
   updatedAt: string;
 }
 
-// ─── Order request (for future execution) ────────────────────
+// ─── Order Request ───────────────────────────────────────────
 
 export interface OrderRequest {
   instrument: string;
@@ -61,27 +98,93 @@ export interface OrderRequest {
   quantity: number;
   price?: number;
   stopPrice?: number;
+  idempotencyKey?: string; // auto-generated if not provided
 }
 
-// ─── Execution state (combined for UI) ───────────────────────
+// ─── Order Result ────────────────────────────────────────────
 
-export interface ExecutionState {
-  mode: ExecutionMode;
+export interface OrderResult {
+  success: boolean;
+  order?: NormalizedOrder;
+  error?: string;
+  errorCode?: ExecutionErrorCode;
+  requiresApproval?: boolean;
+  dryRun?: boolean;
+}
+
+export type ExecutionErrorCode =
+  | "DISABLED"
+  | "MONITOR_MODE"
+  | "DUPLICATE_ORDER"
+  | "POSITION_LIMIT"
+  | "COOLDOWN"
+  | "SLIPPAGE_GUARD"
+  | "CIRCUIT_BREAKER"
+  | "PROVIDER_ERROR"
+  | "RATE_LIMIT"
+  | "UNKNOWN";
+
+// ─── Provider Health ─────────────────────────────────────────
+
+export type ProviderHealthStatus = "healthy" | "degraded" | "down" | "unknown";
+
+export interface ProviderHealth {
+  provider: ExecutionProvider;
+  status: ProviderHealthStatus;
   connected: boolean;
-  environment: "sandbox" | "production";
-  account: AccountInfo | null;
-  positions: Position[];
-  orders: Order[];
+  lastSuccessfulConnection: string | null;
+  lastSuccessfulAuthRefresh: string | null;
+  latencyMs: number | null;
+  consecutiveFailures: number;
+  message: string;
+}
+
+// ─── Unified Execution State ─────────────────────────────────
+
+export interface UnifiedExecutionState {
+  mode: ExecutionMode;
+  activeProvider: ExecutionProvider | null;
+  providers: ProviderHealth[];
+  accounts: NormalizedAccount[];
+  positions: NormalizedPosition[];
+  orders: NormalizedOrder[];
+  guardrails: GuardrailConfig;
   lastUpdated: string | null;
 }
 
-// ─── Tradovate adapter interface ─────────────────────────────
+// ─── Guardrails ──────────────────────────────────────────────
 
-export interface TradovateAdapter {
+export interface GuardrailConfig {
+  maxPositionsPerSymbol: number;
+  maxSlippageTicks: number;
+  orderCooldownSeconds: number;
+  circuitBreakerThreshold: number; // consecutive failures before tripping
+  circuitBreakerResetSeconds: number;
+  maxOrdersPerHour: number;
+}
+
+export const DEFAULT_GUARDRAILS: GuardrailConfig = {
+  maxPositionsPerSymbol: 1,
+  maxSlippageTicks: 4,
+  orderCooldownSeconds: 30,
+  circuitBreakerThreshold: 3,
+  circuitBreakerResetSeconds: 300,
+  maxOrdersPerHour: 20,
+};
+
+// ─── Execution Provider Adapter Interface ────────────────────
+
+export interface ExecutionProviderAdapter {
+  readonly provider: ExecutionProvider;
   readonly name: string;
+
   connect(): Promise<{ ok: boolean; message: string }>;
-  getAccount(): Promise<AccountInfo>;
-  getPositions(): Promise<Position[]>;
-  getOrders(): Promise<Order[]>;
-  placeOrder(req: OrderRequest): Promise<Order>;
+  disconnect(): Promise<void>;
+  getAccounts(): Promise<NormalizedAccount[]>;
+  getPositions(accountId?: string): Promise<NormalizedPosition[]>;
+  getOpenOrders(accountId?: string): Promise<NormalizedOrder[]>;
+  placeOrder(request: OrderRequest, accountId: string): Promise<NormalizedOrder>;
+  cancelOrder(orderId: string): Promise<{ ok: boolean; message: string }>;
+  flattenPosition(instrument: string, accountId: string): Promise<NormalizedOrder>;
+  getHealth(): Promise<ProviderHealth>;
 }

@@ -8,8 +8,10 @@ import type { ExecutionMode } from "@/types/execution";
 const VALID_MODES: ExecutionMode[] = [
   "disabled",
   "monitor",
-  "paper",
-  "manual_confirm",
+  "dry_run",
+  "manual_approval",
+  "semi_auto",
+  "full_auto",
 ];
 
 export async function GET() {

@@ -10,14 +10,14 @@ import {
   Wifi,
   WifiOff,
 } from "lucide-react";
-import type { ExecutionState, ExecutionMode } from "@/types/execution";
+import type { UnifiedExecutionState, ExecutionMode } from "@/types/execution";
 import { AccountPanel } from "@/components/execution/account-panel";
 import { PositionsTable } from "@/components/execution/positions-table";
 import { OrdersTable } from "@/components/execution/orders-table";
 import { ModeSelector } from "@/components/execution/mode-selector";
 
 export default function ExecutionPage() {
-  const [state, setState] = useState<ExecutionState | null>(null);
+  const [state, setState] = useState<UnifiedExecutionState | null>(null);
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{
@@ -83,14 +83,14 @@ export default function ExecutionPage() {
         <div className="flex items-center gap-3">
           {/* Connection status */}
           <div className="flex items-center gap-2 rounded-md bg-muted px-3 py-1.5">
-            {state?.connected ? (
+            {state?.activeProvider ? (
               <Wifi className="h-3.5 w-3.5 text-success" />
             ) : (
               <WifiOff className="h-3.5 w-3.5 text-muted-foreground" />
             )}
             <span className="text-xs text-muted-foreground">
-              {state?.connected ? "Connected" : "Not connected"} ·{" "}
-              {state?.environment ?? "—"}
+              {state?.activeProvider ?? "No provider"} ·{" "}
+              {state?.accounts[0]?.environment ?? "—"}
             </span>
           </div>
 
@@ -151,7 +151,7 @@ export default function ExecutionPage() {
               mode={state?.mode ?? "monitor"}
               onChange={handleModeChange}
             />
-            <AccountPanel account={state?.account ?? null} />
+            <AccountPanel account={state?.accounts[0] ?? null} />
           </div>
 
           {/* Row 2: Positions */}

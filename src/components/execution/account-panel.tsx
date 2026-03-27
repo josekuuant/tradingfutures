@@ -1,9 +1,9 @@
 import { cn } from "@/lib/utils";
-import type { AccountInfo } from "@/types/execution";
+import type { NormalizedAccount } from "@/types/execution";
 import { DollarSign } from "lucide-react";
 
 interface AccountPanelProps {
-  account: AccountInfo | null;
+  account: NormalizedAccount | null;
 }
 
 export function AccountPanel({ account }: AccountPanelProps) {

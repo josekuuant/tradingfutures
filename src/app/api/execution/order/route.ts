@@ -25,9 +25,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           error: result.error,
-          requiresConfirmation: result.requiresConfirmation ?? false,
+          errorCode: result.errorCode,
+          requiresApproval: result.requiresApproval ?? false,
+          dryRun: result.dryRun ?? false,
         },
-        { status: result.requiresConfirmation ? 200 : 400 }
+        { status: result.requiresApproval ? 200 : 400 }
       );
     }
 
