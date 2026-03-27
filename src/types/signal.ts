@@ -69,6 +69,7 @@ export type SignalErrorCode =
   | "NO_PROMPT"
   | "NO_API_KEY"
   | "MARKET_DATA_FAILED"
+  | "FILTERED"
   | "CLAUDE_API_ERROR"
   | "CLAUDE_TIMEOUT"
   | "INVALID_RESPONSE"

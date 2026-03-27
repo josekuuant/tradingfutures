@@ -6,6 +6,14 @@ import { listPrompts } from "./prompts";
 import { callClaude, ClaudeClientError } from "./claude/client";
 import { assemblePrompt } from "./claude/prompt-assembler";
 import { parseClaudeResponse } from "./claude/response-parser";
+import { runPreFilters } from "./engine/pre-filters";
+import {
+  pushTrace,
+  getTraces,
+  getLastTrace,
+  getEngineStats,
+  getLastSuccessfulRunAt,
+} from "./engine/trace-store";
 import type {
   Signal,
   SignalEngineInput,
@@ -13,6 +21,19 @@ import type {
   SignalErrorCode,
 } from "@/types/signal";
 import type { Instrument, Timeframe } from "@/types/market";
+import { DEFAULT_ENGINE_CONFIG, type EngineConfig } from "@/types/engine";
+
+// ─── Engine state ────────────────────────────────────────────
+
+let engineConfig: EngineConfig = { ...DEFAULT_ENGINE_CONFIG };
+
+export function getEngineConfig(): EngineConfig {
+  return { ...engineConfig };
+}
+
+export function updateEngineConfig(partial: Partial<EngineConfig>): void {
+  engineConfig = { ...engineConfig, ...partial };
+}
 
 // ─── Main entry point ────────────────────────────────────────
 
@@ -24,13 +45,35 @@ export async function generateSignal(
   // 1. Get active strategy
   const strategy = await getActiveStrategy();
   if (!strategy) {
+    pushTrace({
+      outcome: "error",
+      instrument: input.instrument ?? "NQ",
+      timeframe: input.timeframe ?? "5m",
+      strategyName: null,
+      promptName: null,
+      filterReport: null,
+      signalId: null,
+      error: "No active strategy",
+      durationMs: Date.now() - startTime,
+    });
     return fail("NO_STRATEGY", "No active strategy. Activate one in Strategies.");
   }
 
   // 2. Get active prompt
-  const prompts = await listPrompts();
-  const activePrompt = prompts.find((p) => p.isActive);
+  const allPrompts = await listPrompts();
+  const activePrompt = allPrompts.find((p) => p.isActive);
   if (!activePrompt) {
+    pushTrace({
+      outcome: "error",
+      instrument: input.instrument ?? "NQ",
+      timeframe: input.timeframe ?? "5m",
+      strategyName: strategy.name,
+      promptName: null,
+      filterReport: null,
+      signalId: null,
+      error: "No active prompt",
+      durationMs: Date.now() - startTime,
+    });
     return fail("NO_PROMPT", "No active prompt. Activate one in Prompt Studio.");
   }
 
@@ -43,18 +86,67 @@ export async function generateSignal(
     snapshot = await getMarketSnapshot(instrument, timeframe);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
-    console.error("[SignalEngine] Market data failed:", msg);
+    console.error("[Engine] Market data failed:", msg);
+    pushTrace({
+      outcome: "error",
+      instrument,
+      timeframe,
+      strategyName: strategy.name,
+      promptName: activePrompt.name,
+      filterReport: null,
+      signalId: null,
+      error: `Market data: ${msg}`,
+      durationMs: Date.now() - startTime,
+    });
     return fail("MARKET_DATA_FAILED", `Failed to get market data: ${msg}`);
   }
 
-  // 4. Assemble prompt
+  // 4. Get recent signals for dedup check
+  const recentSignals = await listSignals(10);
+
+  // 5. Run pre-filters
+  const lastRunAt = getLastSuccessfulRunAt();
+  const filterReport = runPreFilters(
+    snapshot,
+    strategy,
+    recentSignals,
+    engineConfig,
+    lastRunAt
+  );
+
+  // Check if filters passed
+  const skipFilters = input.instrument !== undefined; // Manual trigger bypasses filters
+  if (!filterReport.passed && !skipFilters) {
+    const skippedFilters = filterReport.results
+      .filter((r) => r.verdict === "skip")
+      .map((r) => `${r.filter}: ${r.reason}`)
+      .join("; ");
+
+    console.log(`[Engine] Filtered out: ${skippedFilters}`);
+
+    pushTrace({
+      outcome: "filtered_out",
+      instrument,
+      timeframe,
+      strategyName: strategy.name,
+      promptName: activePrompt.name,
+      filterReport,
+      signalId: null,
+      error: null,
+      durationMs: Date.now() - startTime,
+    });
+
+    return fail("FILTERED", `Pre-filters not passed: ${skippedFilters}` as string);
+  }
+
+  // 6. Assemble prompt
   const assembled = assemblePrompt(activePrompt, strategy, snapshot);
 
   console.log(
-    `[SignalEngine] Calling Claude for ${instrument} ${timeframe} with strategy "${strategy.name}" and prompt "${activePrompt.name}"`
+    `[Engine] Calling Claude for ${instrument} ${timeframe} | strategy="${strategy.name}" | prompt="${activePrompt.name}"`
   );
 
-  // 5. Call Claude
+  // 7. Call Claude
   let claudeResponse;
   try {
     claudeResponse = await callClaude({
@@ -69,21 +161,43 @@ export async function generateSignal(
         TIMEOUT: "CLAUDE_TIMEOUT",
       };
       const code = codeMap[err.code] ?? "CLAUDE_API_ERROR";
-      console.error(`[SignalEngine] Claude error (${err.code}): ${err.message}`);
+      console.error(`[Engine] Claude error (${err.code}): ${err.message}`);
+      pushTrace({
+        outcome: "error",
+        instrument,
+        timeframe,
+        strategyName: strategy.name,
+        promptName: activePrompt.name,
+        filterReport,
+        signalId: null,
+        error: `Claude: ${err.message}`,
+        durationMs: Date.now() - startTime,
+      });
       return fail(code, err.message);
     }
     const msg = err instanceof Error ? err.message : "Unknown Claude error";
-    console.error("[SignalEngine] Claude error:", msg);
+    console.error("[Engine] Claude error:", msg);
+    pushTrace({
+      outcome: "error",
+      instrument,
+      timeframe,
+      strategyName: strategy.name,
+      promptName: activePrompt.name,
+      filterReport,
+      signalId: null,
+      error: msg,
+      durationMs: Date.now() - startTime,
+    });
     return fail("CLAUDE_API_ERROR", msg);
   }
 
-  // 6. Parse response
+  // 8. Parse response
   const parseResult = parseClaudeResponse(claudeResponse.content);
 
   if (!parseResult.success) {
-    console.error("[SignalEngine] Parse error:", parseResult.error);
+    console.error("[Engine] Parse error:", parseResult.error);
 
-    // Still save the failed attempt for audit
+    // Save failed attempt for audit
     await saveSignalToDb({
       strategyId: strategy.id,
       strategyName: strategy.name,
@@ -108,10 +222,22 @@ export async function generateSignal(
       durationMs: claudeResponse.durationMs,
     });
 
+    pushTrace({
+      outcome: "error",
+      instrument,
+      timeframe,
+      strategyName: strategy.name,
+      promptName: activePrompt.name,
+      filterReport,
+      signalId: null,
+      error: `Parse: ${parseResult.error}`,
+      durationMs: Date.now() - startTime,
+    });
+
     return fail("INVALID_RESPONSE", parseResult.error);
   }
 
-  // 7. Build and persist signal
+  // 9. Persist signal
   const data = parseResult.data;
   const totalDuration = Date.now() - startTime;
 
@@ -140,11 +266,27 @@ export async function generateSignal(
   });
 
   console.log(
-    `[SignalEngine] Signal generated: ${data.action} (${Math.round(data.confidence * 100)}% confidence) in ${totalDuration}ms`
+    `[Engine] Signal: ${data.action} (${Math.round(data.confidence * 100)}%) in ${totalDuration}ms`
   );
+
+  pushTrace({
+    outcome: "signal_generated",
+    instrument,
+    timeframe,
+    strategyName: strategy.name,
+    promptName: activePrompt.name,
+    filterReport,
+    signalId: signal.id,
+    error: null,
+    durationMs: totalDuration,
+  });
 
   return { success: true, signal };
 }
+
+// ─── Re-exports for API ──────────────────────────────────────
+
+export { getTraces, getLastTrace, getEngineStats };
 
 // ─── Signal persistence ──────────────────────────────────────
 
@@ -203,10 +345,6 @@ async function saveSignalToDb(data: SignalInsert): Promise<Signal> {
     createdAt: now,
   });
 
-  return rowToSignal(id, data, now);
-}
-
-function rowToSignal(id: string, data: SignalInsert, createdAt: string): Signal {
   return {
     id,
     strategyId: data.strategyId,
@@ -230,7 +368,7 @@ function rowToSignal(id: string, data: SignalInsert, createdAt: string): Signal 
     userPromptSent: data.userPromptSent,
     rawResponse: data.rawResponse,
     durationMs: data.durationMs,
-    createdAt,
+    createdAt: now,
   };
 }
 

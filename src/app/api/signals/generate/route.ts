@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { generateSignal } from "@/lib/services/signal-engine";
+import { generateSignal, getLastTrace } from "@/lib/services/signal-engine";
 
 export async function POST(req: NextRequest) {
   try {
@@ -10,13 +10,23 @@ export async function POST(req: NextRequest) {
     const result = await generateSignal({ instrument, timeframe });
 
     if (!result.success) {
+      const trace = getLastTrace();
+
+      const statusMap: Record<string, number> = {
+        NO_STRATEGY: 400,
+        NO_PROMPT: 400,
+        NO_API_KEY: 401,
+        FILTERED: 200, // Not an error — just filtered out
+      };
+      const status = statusMap[result.code] ?? 500;
+
       return NextResponse.json(
-        { error: result.error, code: result.code },
-        { status: result.code === "NO_STRATEGY" || result.code === "NO_PROMPT"
-          ? 400
-          : result.code === "NO_API_KEY"
-            ? 401
-            : 500 }
+        {
+          error: result.error,
+          code: result.code,
+          filterReport: trace?.filterReport ?? null,
+        },
+        { status }
       );
     }
 
