@@ -14,14 +14,17 @@ sqlite.pragma("journal_mode = WAL");
 sqlite.pragma("foreign_keys = ON");
 
 // ─── Create tables ───────────────────────────────────────────
+
+// api_connections: supports all providers without restrictive CHECK
+// Validation handled at application layer via Zod schemas
 sqlite.exec(`
   CREATE TABLE IF NOT EXISTS api_connections (
     id TEXT PRIMARY KEY,
-    provider TEXT NOT NULL CHECK (provider IN ('databento', 'tradovate', 'claude')),
+    provider TEXT NOT NULL,
     is_enabled INTEGER NOT NULL DEFAULT 0,
-    environment TEXT NOT NULL DEFAULT 'sandbox' CHECK (environment IN ('sandbox', 'production')),
+    environment TEXT NOT NULL DEFAULT 'sandbox',
     credentials TEXT NOT NULL DEFAULT '{}',
-    status TEXT NOT NULL DEFAULT 'untested' CHECK (status IN ('untested', 'connected', 'error')),
+    status TEXT NOT NULL DEFAULT 'untested',
     last_tested_at TEXT,
     last_error TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -31,6 +34,38 @@ sqlite.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS idx_api_connections_provider
     ON api_connections(provider);
 `);
+
+// Migrate existing tables: SQLite can't ALTER CHECK constraints,
+// so if the old table exists with CHECK, recreate it preserving data
+try {
+  // Test if we can insert a new provider — if CHECK blocks it, migrate
+  const testStmt = sqlite.prepare(
+    "INSERT INTO api_connections (id, provider) VALUES ('__test__', 'rithmic')"
+  );
+  testStmt.run();
+  sqlite.exec("DELETE FROM api_connections WHERE id = '__test__'");
+} catch {
+  // Old CHECK constraint blocks new providers — recreate table
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS api_connections_new (
+      id TEXT PRIMARY KEY,
+      provider TEXT NOT NULL,
+      is_enabled INTEGER NOT NULL DEFAULT 0,
+      environment TEXT NOT NULL DEFAULT 'sandbox',
+      credentials TEXT NOT NULL DEFAULT '{}',
+      status TEXT NOT NULL DEFAULT 'untested',
+      last_tested_at TEXT,
+      last_error TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    INSERT INTO api_connections_new SELECT * FROM api_connections;
+    DROP TABLE api_connections;
+    ALTER TABLE api_connections_new RENAME TO api_connections;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_api_connections_provider
+      ON api_connections(provider);
+  `);
+}
 
 sqlite.exec(`
   CREATE TABLE IF NOT EXISTS strategies (

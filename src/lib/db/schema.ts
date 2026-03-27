@@ -7,22 +7,19 @@ export const apiConnections = sqliteTable("api_connections", {
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
   provider: text("provider", {
-    enum: ["databento", "tradovate", "claude"],
+    enum: ["databento", "claude", "tradovate", "rithmic", "ninjatrader", "topstepx"],
   }).notNull(),
   isEnabled: integer("is_enabled", { mode: "boolean" })
     .notNull()
     .default(false),
   environment: text("environment", {
-    enum: ["sandbox", "production"],
+    enum: ["sandbox", "production", "demo"],
   })
     .notNull()
     .default("sandbox"),
-  // Encrypted/stored credentials as JSON blob
-  // Each provider has different fields — stored as JSON to stay flexible
   credentials: text("credentials").notNull().default("{}"),
-  // Connection health tracking
   status: text("status", {
-    enum: ["untested", "connected", "error"],
+    enum: ["untested", "connected", "error", "auth_expired"],
   })
     .notNull()
     .default("untested"),

@@ -48,6 +48,12 @@ const STATUS_DISPLAY: Record<
     color: "text-danger",
     dot: "bg-danger shadow-[0_0_6px_hsl(var(--danger))]",
   },
+  auth_expired: {
+    label: "Auth Expired",
+    icon: XCircle,
+    color: "text-warning",
+    dot: "bg-warning shadow-[0_0_6px_hsl(var(--warning))]",
+  },
 };
 
 export function ConnectionForm({
@@ -226,14 +232,16 @@ export function ConnectionForm({
               Environment
             </label>
             <div className="flex gap-2">
-              {(["sandbox", "production"] as const).map((env) => (
+              {(config.environments ?? ["sandbox", "production"]).map((env) => (
                 <button
                   key={env}
                   onClick={() => setEnvironment(env)}
                   className={cn(
                     "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
                     environment === env
-                      ? "bg-primary text-primary-foreground"
+                      ? env === "production"
+                        ? "bg-danger text-white"
+                        : "bg-primary text-primary-foreground"
                       : "bg-muted text-muted-foreground hover:bg-accent"
                   )}
                 >
@@ -242,6 +250,13 @@ export function ConnectionForm({
               ))}
             </div>
           </div>
+        )}
+
+        {/* Provider notes */}
+        {config.notes && (
+          <p className="text-[10px] text-muted-foreground/60 leading-relaxed">
+            {config.notes}
+          </p>
         )}
 
         {/* Credential fields */}
@@ -255,6 +270,11 @@ export function ConnectionForm({
               <label className="flex items-center gap-1 text-xs font-medium text-muted-foreground">
                 {field.label}
                 {field.required && <span className="text-danger">*</span>}
+                {field.helpText && (
+                  <span className="ml-1 font-normal text-muted-foreground/40">
+                    — {field.helpText}
+                  </span>
+                )}
               </label>
 
               {field.type === "select" ? (

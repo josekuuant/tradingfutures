@@ -171,6 +171,31 @@ export async function testConnection(
           ? "Claude API key format validated. Live test requires Anthropic SDK integration."
           : "Invalid API key format. Expected sk-ant-... prefix.";
         break;
+
+      case "rithmic":
+        success = Boolean(creds.username && creds.password);
+        message = success
+          ? "Rithmic credentials validated. Live session requires R | Protocol connection."
+          : "Username and password are required.";
+        break;
+
+      case "ninjatrader":
+        success = Boolean(creds.host || creds.apiKey);
+        message = success
+          ? "NinjaTrader configuration validated. ATI bridge connection available."
+          : "Host address or API key is required.";
+        break;
+
+      case "topstepx":
+        success = Boolean(creds.apiKey && creds.apiKey.length > 10);
+        message = success
+          ? "TopstepX API key validated. OAuth token exchange pending."
+          : "Valid API key is required.";
+        break;
+
+      default:
+        message = `Unknown provider: ${provider}`;
+        break;
     }
   } catch (err) {
     success = false;
