@@ -1,6 +1,8 @@
 import { log } from "@/lib/logger";
 import { getRawCredentials } from "@/lib/services/connections";
 import { MockExecutionAdapter } from "./adapter-mock";
+import { TradovateAdapter } from "./adapter-tradovate";
+import { TopstepXAdapter } from "./adapter-topstepx";
 import type {
   ExecutionProvider,
   ExecutionProviderAdapter,
@@ -26,9 +28,9 @@ export function registerAdapter(adapter: ExecutionProviderAdapter): void {
 }
 
 export function unregisterAdapter(provider: ExecutionProvider): void {
-  const adapter = adapters.get(provider);
-  if (adapter) {
-    adapter.disconnect().catch(() => {});
+  const existing = adapters.get(provider);
+  if (existing) {
+    existing.disconnect().catch(() => {});
     adapters.delete(provider);
     log.execution.info(`Unregistered execution adapter: ${provider}`);
   }
@@ -42,35 +44,77 @@ export async function ensureAdaptersInitialized(): Promise<void> {
   if (initialized) return;
   initialized = true;
 
-  const providers: ExecutionProvider[] = [
-    "tradovate",
-    "rithmic",
-    "ninjatrader",
-    "topstepx",
-  ];
-
-  for (const provider of providers) {
-    try {
-      const creds = await getRawCredentials(provider);
-      if (creds && Object.values(creds).some((v) => v && String(v).length > 0)) {
-        // Real adapters will be registered here as they're implemented.
-        // For now, register mock adapters for development.
-        const adapter = new MockExecutionAdapter(provider);
-        registerAdapter(adapter);
-        log.execution.info(
-          `${provider}: credentials found, mock adapter registered (replace with real adapter when ready)`
-        );
-      }
-    } catch {
-      // No credentials stored — skip
+  // Tradovate
+  try {
+    const creds = await getRawCredentials("tradovate");
+    if (creds?.username && creds?.password) {
+      const env = (creds.environment as "demo" | "production") ?? "demo";
+      const adapter = new TradovateAdapter(
+        {
+          username: String(creds.username),
+          password: String(creds.password),
+          appId: creds.appId ? String(creds.appId) : undefined,
+          cid: creds.cid ? String(creds.cid) : undefined,
+          sec: creds.sec ? String(creds.sec) : undefined,
+        },
+        env
+      );
+      registerAdapter(adapter);
+      log.execution.info("Tradovate adapter initialized from stored credentials");
     }
+  } catch {
+    // No Tradovate credentials
   }
 
-  // Always have at least one mock for development
+  // TopstepX
+  try {
+    const creds = await getRawCredentials("topstepx");
+    if (creds?.apiKey) {
+      const env = (creds.environment as "demo" | "production") ?? "demo";
+      const adapter = new TopstepXAdapter(
+        {
+          apiKey: String(creds.apiKey),
+          username: creds.username ? String(creds.username) : undefined,
+          accountId: creds.accountId ? String(creds.accountId) : undefined,
+        },
+        env
+      );
+      registerAdapter(adapter);
+      log.execution.info("TopstepX adapter initialized from stored credentials");
+    }
+  } catch {
+    // No TopstepX credentials
+  }
+
+  // Rithmic — placeholder (mock for now)
+  try {
+    const creds = await getRawCredentials("rithmic");
+    if (creds?.username && creds?.password) {
+      registerAdapter(new MockExecutionAdapter("rithmic"));
+      log.execution.info(
+        "Rithmic: credentials found, mock adapter registered (real adapter pending R|Protocol integration)"
+      );
+    }
+  } catch {
+    // No Rithmic credentials
+  }
+
+  // NinjaTrader — placeholder (mock for now)
+  try {
+    const creds = await getRawCredentials("ninjatrader");
+    if (creds?.host || creds?.apiKey) {
+      registerAdapter(new MockExecutionAdapter("ninjatrader"));
+      log.execution.info(
+        "NinjaTrader: credentials found, mock adapter registered (real adapter pending ATI bridge)"
+      );
+    }
+  } catch {
+    // No NinjaTrader credentials
+  }
+
+  // Fallback: always have a mock for development
   if (adapters.size === 0) {
     registerAdapter(new MockExecutionAdapter("tradovate"));
-    log.execution.info(
-      "No execution credentials found — tradovate mock registered"
-    );
+    log.execution.info("No execution credentials found — tradovate mock registered");
   }
 }
