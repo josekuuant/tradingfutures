@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createChart,
   type IChartApi,
   type ISeriesApi,
-  type UTCTimestamp,
   ColorType,
   LineStyle,
   CrosshairMode,
@@ -13,6 +12,7 @@ import {
 import type { OHLCV, SessionLevels } from "@/types/market";
 import {
   toCandlestickData,
+  toVolumeData,
   toLevelLines,
   SIGNAL_MARKER_CONFIG,
   type SignalMarker,
@@ -27,19 +27,24 @@ interface PriceChartProps {
   height?: number;
 }
 
-// ─── Chart theme (dark) ──────────────────────────────────────
+// ─── Chart theme (dark premium) ─────────────────────────────
 
-const CHART_COLORS = {
-  background: "transparent",
+const THEME = {
+  bg: "transparent",
   text: "rgba(156, 163, 175, 0.6)",
-  grid: "rgba(42, 46, 57, 0.4)",
+  gridLines: "rgba(30, 34, 45, 0.6)",
   border: "rgba(42, 46, 57, 0.6)",
   crosshair: "rgba(99, 102, 241, 0.4)",
-  upColor: "#22c55e",
-  downColor: "#ef4444",
-  upWick: "#22c55e",
-  downWick: "#ef4444",
+  crosshairLabel: "#1a1b2e",
+  up: "#22c55e",
+  down: "#ef4444",
 } as const;
+
+const LINE_STYLE_MAP: Record<string, LineStyle> = {
+  solid: LineStyle.Solid,
+  dashed: LineStyle.Dashed,
+  dotted: LineStyle.Dotted,
+};
 
 // ─── Component ───────────────────────────────────────────────
 
@@ -52,67 +57,90 @@ export function PriceChart({
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const levelSeriesRefs = useRef<ISeriesApi<"Line">[]>([]);
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const [visibleLevels, setVisibleLevels] = useState<Set<string>>(
+    new Set(["VWAP", "Session H/L", "Opening Range", "Overnight H/L", "Prev Day"])
+  );
 
-  // ── Create chart once ────────────────────────────────────
-  const initChart = useCallback(() => {
+  // ── Create chart ───────────────────────────────────────────
+  useEffect(() => {
     if (!containerRef.current) return;
 
-    // Cleanup existing
-    if (chartRef.current) {
-      chartRef.current.remove();
-      chartRef.current = null;
-      candleSeriesRef.current = null;
-      levelSeriesRefs.current = [];
-    }
-
     const chart = createChart(containerRef.current, {
+      width: containerRef.current.clientWidth,
+      height,
       layout: {
-        background: { type: ColorType.Solid, color: CHART_COLORS.background },
-        textColor: CHART_COLORS.text,
+        background: { type: ColorType.Solid, color: THEME.bg },
+        textColor: THEME.text,
         fontFamily: "system-ui, -apple-system, sans-serif",
         fontSize: 11,
       },
       grid: {
-        vertLines: { color: CHART_COLORS.grid },
-        horzLines: { color: CHART_COLORS.grid },
+        vertLines: { color: THEME.gridLines },
+        horzLines: { color: THEME.gridLines },
       },
       crosshair: {
         mode: CrosshairMode.Normal,
-        vertLine: { color: CHART_COLORS.crosshair, width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#1e1e2e" },
-        horzLine: { color: CHART_COLORS.crosshair, width: 1, style: LineStyle.Dashed, labelBackgroundColor: "#1e1e2e" },
+        vertLine: {
+          color: THEME.crosshair,
+          width: 1,
+          style: LineStyle.Dashed,
+          labelBackgroundColor: THEME.crosshairLabel,
+        },
+        horzLine: {
+          color: THEME.crosshair,
+          width: 1,
+          style: LineStyle.Dashed,
+          labelBackgroundColor: THEME.crosshairLabel,
+        },
       },
       rightPriceScale: {
-        borderColor: CHART_COLORS.border,
-        scaleMargins: { top: 0.1, bottom: 0.1 },
+        borderColor: THEME.border,
+        scaleMargins: { top: 0.08, bottom: 0.15 },
       },
       timeScale: {
-        borderColor: CHART_COLORS.border,
+        borderColor: THEME.border,
         timeVisible: true,
         secondsVisible: false,
         rightOffset: 5,
         barSpacing: 8,
+        minBarSpacing: 4,
       },
       handleScroll: { vertTouchDrag: false },
     });
 
     // Candlestick series
     const candleSeries = chart.addCandlestickSeries({
-      upColor: CHART_COLORS.upColor,
-      downColor: CHART_COLORS.downColor,
+      upColor: THEME.up,
+      downColor: THEME.down,
       borderVisible: false,
-      wickUpColor: CHART_COLORS.upWick,
-      wickDownColor: CHART_COLORS.downWick,
+      wickUpColor: THEME.up,
+      wickDownColor: THEME.down,
+      priceLineVisible: true,
+      priceLineWidth: 1,
+      lastValueVisible: true,
+    });
+
+    // Volume histogram (overlay at bottom)
+    const volumeSeries = chart.addHistogramSeries({
+      priceFormat: { type: "volume" },
+      priceScaleId: "volume",
+      priceLineVisible: false,
+      lastValueVisible: false,
+    });
+
+    chart.priceScale("volume").applyOptions({
+      scaleMargins: { top: 0.85, bottom: 0 },
     });
 
     chartRef.current = chart;
     candleSeriesRef.current = candleSeries;
+    volumeSeriesRef.current = volumeSeries;
 
     // Responsive resize
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
-        const { width } = entry.contentRect;
-        chart.applyOptions({ width });
+        chart.applyOptions({ width: entry.contentRect.width });
       }
     });
     resizeObserver.observe(containerRef.current);
@@ -120,23 +148,23 @@ export function PriceChart({
     return () => {
       resizeObserver.disconnect();
       chart.remove();
+      chartRef.current = null;
+      candleSeriesRef.current = null;
+      volumeSeriesRef.current = null;
     };
-  }, []);
+  }, [height]);
 
-  // ── Init on mount ────────────────────────────────────────
+  // ── Update data ────────────────────────────────────────────
   useEffect(() => {
-    const cleanup = initChart();
-    return () => cleanup?.();
-  }, [initChart]);
+    if (!candleSeriesRef.current || !volumeSeriesRef.current || candles.length === 0) return;
 
-  // ── Update candle data ───────────────────────────────────
-  useEffect(() => {
-    if (!candleSeriesRef.current || candles.length === 0) return;
+    const candleData = toCandlestickData(candles);
+    const volumeData = toVolumeData(candles);
 
-    const data = toCandlestickData(candles);
-    candleSeriesRef.current.setData(data);
+    candleSeriesRef.current.setData(candleData);
+    volumeSeriesRef.current.setData(volumeData);
 
-    // Signal markers
+    // Signal markers on candle series
     if (signals.length > 0) {
       const markers = signals.map((s) => {
         const config = SIGNAL_MARKER_CONFIG[s.action];
@@ -149,96 +177,146 @@ export function PriceChart({
         };
       });
       candleSeriesRef.current.setMarkers(markers);
+    } else {
+      candleSeriesRef.current.setMarkers([]);
     }
 
-    // Fit content
     chartRef.current?.timeScale().fitContent();
   }, [candles, signals]);
 
-  // ── Update level lines ───────────────────────────────────
+  // ── Update level price lines ───────────────────────────────
   useEffect(() => {
-    if (!chartRef.current || !candleSeriesRef.current) return;
+    if (!candleSeriesRef.current) return;
 
-    // Remove old level series
-    for (const series of levelSeriesRefs.current) {
-      try {
-        chartRef.current.removeSeries(series);
-      } catch {
-        // series may already be removed
-      }
-    }
-    levelSeriesRefs.current = [];
+    // Remove existing price lines
+    const series = candleSeriesRef.current;
+    // Lightweight Charts doesn't have a removeAllPriceLines, so we recreate
+    // Price lines on the candle series itself (shown on Y axis with labels)
 
     if (!levels || candles.length === 0) return;
 
-    const levelLines = toLevelLines(levels);
-    const firstTime = Math.floor(new Date(candles[0].timestamp).getTime() / 1000);
-    const lastTime = Math.floor(new Date(candles[candles.length - 1].timestamp).getTime() / 1000);
+    const allLevelLines = toLevelLines(levels);
 
-    for (const level of levelLines) {
-      const lineStyle = level.style === "solid"
-        ? LineStyle.Solid
-        : level.style === "dotted"
-          ? LineStyle.Dotted
-          : LineStyle.Dashed;
+    // Filter by visibility toggle
+    const activeLines = allLevelLines.filter((l) => {
+      if (l.label === "VWAP") return visibleLevels.has("VWAP");
+      if (l.label.startsWith("Session")) return visibleLevels.has("Session H/L");
+      if (l.label.startsWith("OR")) return visibleLevels.has("Opening Range");
+      if (l.label.startsWith("ON")) return visibleLevels.has("Overnight H/L");
+      if (l.label.startsWith("PD")) return visibleLevels.has("Prev Day");
+      return true;
+    });
 
-      const series = chartRef.current.addLineSeries({
+    // Create price lines on the candlestick series
+    for (const level of activeLines) {
+      series.createPriceLine({
+        price: level.price,
         color: level.color,
-        lineWidth: level.style === "solid" ? 2 : 1,
-        lineStyle,
-        priceLineVisible: false,
-        lastValueVisible: false,
-        crosshairMarkerVisible: false,
+        lineWidth: level.lineWidth as 1 | 2 | 3 | 4,
+        lineStyle: LINE_STYLE_MAP[level.style] ?? LineStyle.Dashed,
+        lineVisible: true,
+        axisLabelVisible: true,
         title: level.label,
       });
-
-      series.setData([
-        { time: firstTime as UTCTimestamp, value: level.price },
-        { time: lastTime as UTCTimestamp, value: level.price },
-      ]);
-
-      levelSeriesRefs.current.push(series);
     }
-  }, [levels, candles]);
+  }, [levels, candles, visibleLevels]);
+
+  // ── Legend toggle ──────────────────────────────────────────
+
+  const toggleLevel = (group: string) => {
+    setVisibleLevels((prev) => {
+      const next = new Set(prev);
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
+      return next;
+    });
+  };
 
   return (
     <div className="rounded-lg border border-border bg-card overflow-hidden">
-      {/* Chart legend */}
-      <div className="flex flex-wrap items-center gap-4 border-b border-border/50 px-4 py-2">
-        <LegendItem color="#6366f1" label="VWAP" style="solid" />
-        <LegendItem color="#3b82f6" label="Session H/L" style="dashed" />
-        <LegendItem color="#8b5cf6" label="Opening Range" style="dotted" />
-        <LegendItem color="#f59e0b" label="Overnight H/L" style="dashed" />
-        <LegendItem color="#6b7280" label="Prev Day" style="dashed" />
+      {/* Interactive legend */}
+      <div className="flex flex-wrap items-center gap-1 border-b border-border/50 px-3 py-1.5">
+        <LegendToggle
+          color="#6366f1"
+          label="VWAP"
+          style="solid"
+          active={visibleLevels.has("VWAP")}
+          onClick={() => toggleLevel("VWAP")}
+        />
+        <LegendToggle
+          color="#3b82f6"
+          label="Session H/L"
+          style="dashed"
+          active={visibleLevels.has("Session H/L")}
+          onClick={() => toggleLevel("Session H/L")}
+        />
+        <LegendToggle
+          color="#8b5cf6"
+          label="Opening Range"
+          style="dotted"
+          active={visibleLevels.has("Opening Range")}
+          onClick={() => toggleLevel("Opening Range")}
+        />
+        <LegendToggle
+          color="#f59e0b"
+          label="Overnight H/L"
+          style="dashed"
+          active={visibleLevels.has("Overnight H/L")}
+          onClick={() => toggleLevel("Overnight H/L")}
+        />
+        <LegendToggle
+          color="#6b7280"
+          label="Prev Day"
+          style="dashed"
+          active={visibleLevels.has("Prev Day")}
+          onClick={() => toggleLevel("Prev Day")}
+        />
+
+        <div className="ml-auto flex items-center gap-1.5">
+          <div className="h-2 w-2 rounded-sm bg-success/30" />
+          <span className="text-[9px] text-muted-foreground/40">Volume</span>
+        </div>
       </div>
 
+      {/* Chart container */}
       <div ref={containerRef} style={{ height }} />
     </div>
   );
 }
 
-// ─── Legend item ─────────────────────────────────────────────
+// ─── Legend toggle button ────────────────────────────────────
 
-function LegendItem({
+function LegendToggle({
   color,
   label,
   style,
+  active,
+  onClick,
 }: {
   color: string;
   label: string;
   style: "solid" | "dashed" | "dotted";
+  active: boolean;
+  onClick: () => void;
 }) {
-  const borderStyle = style === "solid" ? "solid" : style === "dotted" ? "dotted" : "dashed";
+  const borderStyle = style === "dotted" ? "dotted" : style === "dashed" ? "dashed" : "solid";
 
   return (
-    <div className="flex items-center gap-1.5">
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-1.5 rounded px-2 py-1 text-[10px] transition-all ${
+        active
+          ? "text-foreground/70 hover:bg-accent/30"
+          : "text-muted-foreground/30 line-through hover:bg-accent/10"
+      }`}
+    >
       <div
-        className="h-0 w-4"
+        className="h-0 w-3.5"
         style={{
-          borderTop: `2px ${borderStyle} ${color}`,
+          borderTop: `2px ${borderStyle} ${active ? color : "rgba(107,114,128,0.3)"}`,
         }}
       />
-      <span className="text-[10px] text-muted-foreground/60">{label}</span>
-    </div>
+      {label}
+    </button>
   );
 }

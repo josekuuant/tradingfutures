@@ -1,6 +1,7 @@
 import type { OHLCV, SessionLevels } from "@/types/market";
 import type {
   CandlestickData,
+  HistogramData,
   UTCTimestamp,
 } from "lightweight-charts";
 
@@ -22,6 +23,7 @@ export interface LevelLine {
   label: string;
   color: string;
   style: "solid" | "dashed" | "dotted";
+  lineWidth: number;
 }
 
 // ─── Transforms ──────────────────────────────────────────────
@@ -37,6 +39,17 @@ export function toCandlestickData(candles: OHLCV[]): CandlestickData[] {
   }));
 }
 
+/** Convert OHLCV[] → volume histogram data */
+export function toVolumeData(candles: OHLCV[]): HistogramData[] {
+  return candles.map((c) => ({
+    time: (Math.floor(new Date(c.timestamp).getTime() / 1000)) as UTCTimestamp,
+    value: c.volume,
+    color: c.close >= c.open
+      ? "rgba(34, 197, 94, 0.25)"  // green up
+      : "rgba(239, 68, 68, 0.25)", // red down
+  }));
+}
+
 /** Map SessionLevels → LevelLine[] for chart overlays */
 export function toLevelLines(levels: SessionLevels): LevelLine[] {
   const lines: LevelLine[] = [];
@@ -45,15 +58,16 @@ export function toLevelLines(levels: SessionLevels): LevelLine[] {
     value: number | null,
     label: string,
     color: string,
-    style: LevelLine["style"] = "dashed"
+    style: LevelLine["style"] = "dashed",
+    lineWidth = 1
   ) => {
-    if (value != null) lines.push({ price: value, label, color, style });
+    if (value != null) lines.push({ price: value, label, color, style, lineWidth });
   };
 
-  // VWAP — primary, solid
-  add(levels.vwap, "VWAP", "#6366f1", "solid");
+  // VWAP — primary, solid, thicker
+  add(levels.vwap, "VWAP", "#6366f1", "solid", 2);
 
-  // Session
+  // Session high/low
   add(levels.sessionHigh, "Session H", "#3b82f6", "dashed");
   add(levels.sessionLow, "Session L", "#3b82f6", "dashed");
 
@@ -68,7 +82,7 @@ export function toLevelLines(levels: SessionLevels): LevelLine[] {
   // Previous day
   add(levels.previousDayHigh, "PD High", "#6b7280", "dashed");
   add(levels.previousDayLow, "PD Low", "#6b7280", "dashed");
-  add(levels.previousDayClose, "PD Close", "#6b7280", "dotted");
+  add(levels.previousDayClose, "PD Close", "#9ca3af", "dotted");
 
   return lines;
 }
