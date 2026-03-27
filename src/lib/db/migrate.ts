@@ -32,5 +32,31 @@ sqlite.exec(`
     ON api_connections(provider);
 `);
 
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS strategies (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    tag TEXT NOT NULL DEFAULT '',
+    instrument TEXT NOT NULL DEFAULT 'NQ',
+    timeframes TEXT NOT NULL DEFAULT '["5m"]',
+    context_conditions TEXT NOT NULL DEFAULT '',
+    entry_conditions TEXT NOT NULL DEFAULT '',
+    invalidation TEXT NOT NULL DEFAULT '',
+    tp1 TEXT NOT NULL DEFAULT '',
+    tp2 TEXT NOT NULL DEFAULT '',
+    min_rr INTEGER NOT NULL DEFAULT 2,
+    volatility_filter TEXT NOT NULL DEFAULT '',
+    volume_filter TEXT NOT NULL DEFAULT '',
+    schedule_filter TEXT NOT NULL DEFAULT '',
+    news_filter TEXT NOT NULL DEFAULT '',
+    no_trade_rules TEXT NOT NULL DEFAULT '',
+    prompt_template TEXT NOT NULL DEFAULT '',
+    is_active INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+`);
+
 console.log("✓ Database migrated successfully");
 sqlite.close();

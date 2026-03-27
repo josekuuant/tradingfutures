@@ -39,3 +39,39 @@ export const apiConnections = sqliteTable("api_connections", {
 // Type helpers
 export type ApiConnection = typeof apiConnections.$inferSelect;
 export type NewApiConnection = typeof apiConnections.$inferInsert;
+
+// ─── Strategies ──────────────────────────────────────────────
+export const strategies = sqliteTable("strategies", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  tag: text("tag").notNull().default(""),
+  instrument: text("instrument").notNull().default("NQ"),
+  timeframes: text("timeframes").notNull().default('["5m"]'), // JSON array
+  contextConditions: text("context_conditions").notNull().default(""),
+  entryConditions: text("entry_conditions").notNull().default(""),
+  invalidation: text("invalidation").notNull().default(""),
+  tp1: text("tp1").notNull().default(""),
+  tp2: text("tp2").notNull().default(""),
+  minRR: integer("min_rr").notNull().default(2),
+  volatilityFilter: text("volatility_filter").notNull().default(""),
+  volumeFilter: text("volume_filter").notNull().default(""),
+  scheduleFilter: text("schedule_filter").notNull().default(""),
+  newsFilter: text("news_filter").notNull().default(""),
+  noTradeRules: text("no_trade_rules").notNull().default(""),
+  promptTemplate: text("prompt_template").notNull().default(""),
+  isActive: integer("is_active", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});
+
+export type StrategyRow = typeof strategies.$inferSelect;
+export type NewStrategyRow = typeof strategies.$inferInsert;
