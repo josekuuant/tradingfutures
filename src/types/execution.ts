@@ -172,6 +172,68 @@ export const DEFAULT_GUARDRAILS: GuardrailConfig = {
   maxOrdersPerHour: 20,
 };
 
+// ─── Proposed Order (approval queue) ─────────────────────────
+
+export type ProposedOrderStatus =
+  | "proposed"
+  | "approved"
+  | "submitted"
+  | "acknowledged"
+  | "rejected"
+  | "cancelled"
+  | "filled"
+  | "partially_filled";
+
+export interface ProposedOrder {
+  id: string;
+  signalId: string | null;
+  provider: ExecutionProvider;
+  instrument: string;
+  side: OrderSide;
+  type: OrderType;
+  quantity: number;
+  price: number | null;
+  stopPrice: number | null;
+  status: ProposedOrderStatus;
+  // Signal context
+  signalAction: string;
+  signalConfidence: number;
+  signalReasoning: string;
+  strategyName: string;
+  // Guardrail results
+  guardrailsPassed: boolean;
+  guardrailDetails: string;
+  // Lifecycle
+  rejectionReason: string;
+  brokerOrderId: string | null;
+  avgFillPrice: number | null;
+  filledQuantity: number;
+  createdAt: string;
+  updatedAt: string;
+  approvedAt: string | null;
+  submittedAt: string | null;
+  filledAt: string | null;
+}
+
+// ─── Expanded Guardrail Config ───────────────────────────────
+
+export interface ExpandedGuardrailConfig extends GuardrailConfig {
+  maxDailyLossPercent: number;
+  maxNotionalPerOrder: number;
+  minClaudeConfidence: number;
+  sessionAllowedHoursET: [number, number];
+  newsLockoutMinutes: number;
+}
+
+export const DEFAULT_EXPANDED_GUARDRAILS: ExpandedGuardrailConfig = {
+  ...DEFAULT_GUARDRAILS,
+  maxDailyLossPercent: 4,
+  maxNotionalPerOrder: 100000,
+  minClaudeConfidence: 0.6,
+  sessionAllowedHoursET: [9.5, 16],
+  newsLockoutMinutes: 15,
+};
+
 // ─── Execution Provider Adapter Interface ────────────────────
 
 export interface ExecutionProviderAdapter {

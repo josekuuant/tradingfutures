@@ -10,14 +10,17 @@ import {
   Wifi,
   WifiOff,
 } from "lucide-react";
-import type { UnifiedExecutionState, ExecutionMode } from "@/types/execution";
+import type { UnifiedExecutionState, ExecutionMode, ProposedOrder } from "@/types/execution";
 import { AccountPanel } from "@/components/execution/account-panel";
 import { PositionsTable } from "@/components/execution/positions-table";
 import { OrdersTable } from "@/components/execution/orders-table";
 import { ModeSelector } from "@/components/execution/mode-selector";
+import { OrderQueue } from "@/components/execution/order-queue";
 
 export default function ExecutionPage() {
   const [state, setState] = useState<UnifiedExecutionState | null>(null);
+  const [queueOrders, setQueueOrders] = useState<ProposedOrder[]>([]);
+  const [queueStats, setQueueStats] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{
@@ -27,8 +30,16 @@ export default function ExecutionPage() {
 
   const fetchState = useCallback(async () => {
     try {
-      const res = await fetch("/api/execution");
-      if (res.ok) setState(await res.json());
+      const [stateRes, queueRes] = await Promise.all([
+        fetch("/api/execution"),
+        fetch("/api/execution/queue"),
+      ]);
+      if (stateRes.ok) setState(await stateRes.json());
+      if (queueRes.ok) {
+        const q = await queueRes.json();
+        setQueueOrders(q.queue ?? []);
+        setQueueStats(q.stats ?? {});
+      }
     } catch (err) {
       console.error("Failed to fetch execution state:", err);
     } finally {
@@ -64,6 +75,21 @@ export default function ExecutionPage() {
     }
   };
 
+  const handleQueueAction = async (
+    id: string,
+    action: string,
+    reason?: string
+  ) => {
+    await fetch(`/api/execution/queue/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, reason }),
+    });
+    await fetchState();
+  };
+
+  const pendingCount = queueStats.pending ?? 0;
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -73,15 +99,21 @@ export default function ExecutionPage() {
             <Play className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold">Execution</h2>
+            <h2 className="text-lg font-semibold">
+              Execution
+              {pendingCount > 0 && (
+                <span className="ml-2 inline-flex h-5 w-5 items-center justify-center rounded-full bg-warning text-[10px] font-bold text-white">
+                  {pendingCount}
+                </span>
+              )}
+            </h2>
             <p className="text-sm text-muted-foreground">
-              Tradovate connection and order management
+              Order management, approval queue, and provider control
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Connection status */}
           <div className="flex items-center gap-2 rounded-md bg-muted px-3 py-1.5">
             {state?.activeProvider ? (
               <Wifi className="h-3.5 w-3.5 text-success" />
@@ -154,10 +186,13 @@ export default function ExecutionPage() {
             <AccountPanel account={state?.accounts[0] ?? null} />
           </div>
 
-          {/* Row 2: Positions */}
+          {/* Row 2: Approval Queue */}
+          <OrderQueue orders={queueOrders} onAction={handleQueueAction} />
+
+          {/* Row 3: Live Positions */}
           <PositionsTable positions={state?.positions ?? []} />
 
-          {/* Row 3: Orders */}
+          {/* Row 4: Broker Orders */}
           <OrdersTable orders={state?.orders ?? []} />
 
           {/* Last updated */}
