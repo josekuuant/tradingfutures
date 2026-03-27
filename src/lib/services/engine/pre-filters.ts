@@ -133,8 +133,8 @@ function checkRelativeVolume(
     candles.reduce((sum, c) => sum + c.volume, 0) / candles.length;
   const currentVolume = snapshot.quote.volume;
 
-  // Compare current session volume against expected pace
-  const relVol = avgVolume > 0 ? currentVolume / (avgVolume * candles.length) : 1;
+  // Relative volume: current session volume vs average candle volume
+  const relVol = avgVolume > 0 ? currentVolume / avgVolume : 1;
   const passed = relVol >= config.minRelativeVolume;
 
   return {

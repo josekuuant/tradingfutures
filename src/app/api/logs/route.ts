@@ -29,7 +29,10 @@ export async function GET(req: NextRequest) {
     }
 
     const limit = searchParams.get("limit");
-    if (limit) query.limit = Math.min(Number(limit), 500);
+    if (limit) {
+      const n = Number(limit);
+      if (Number.isFinite(n) && n > 0) query.limit = Math.min(Math.floor(n), 500);
+    }
 
     const search = searchParams.get("search");
     if (search) query.search = search;

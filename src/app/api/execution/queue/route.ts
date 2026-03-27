@@ -7,7 +7,8 @@ import {
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const limit = Math.min(Number(searchParams.get("limit") ?? 50), 200);
+    const rawLimit = Number(searchParams.get("limit") ?? 50);
+    const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? Math.min(Math.floor(rawLimit), 200) : 50;
 
     const queue = getOrderQueue(limit);
     const stats = getQueueStats();

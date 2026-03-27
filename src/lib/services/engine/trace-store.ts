@@ -34,11 +34,21 @@ export function getLastTrace(): EngineRunTrace | null {
   return traces[0] ?? null;
 }
 
+/**
+ * Returns the timestamp of the last run that actually called Claude.
+ * Used for cooldown calculation — only signal_generated and error (after Claude call) count.
+ * filtered_out does NOT reset cooldown since Claude was never called.
+ */
 export function getLastSuccessfulRunAt(): string | null {
   const last = traces.find(
-    (t) => t.outcome === "signal_generated" || t.outcome === "filtered_out"
+    (t) => t.outcome === "signal_generated" || (t.outcome === "error" && t.signalId !== null)
   );
   return last?.timestamp ?? null;
+}
+
+/** Returns the timestamp of the last completed run of any type */
+export function getLastRunAt(): string | null {
+  return traces[0]?.timestamp ?? null;
 }
 
 // ─── Stats ───────────────────────────────────────────────────

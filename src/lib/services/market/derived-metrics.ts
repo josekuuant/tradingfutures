@@ -36,13 +36,18 @@ export function computeSessionLevels(
     return h + m / 60 < sessionOpenHour;
   });
 
-  // Previous day candles
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = toDateString(yesterday);
-  const prevDayCandles = candles.filter(
-    (c) => toDateString(new Date(c.timestamp)) === yesterdayStr
+  // Previous trading day: find the most recent day in candle data BEFORE today.
+  // This handles weekends/holidays correctly (skips days with no data).
+  const prevDates = new Set(
+    candles
+      .map((c) => toDateString(new Date(c.timestamp)))
+      .filter((d) => d < today)
   );
+  const sortedPrevDates = Array.from(prevDates).sort().reverse();
+  const prevDayStr = sortedPrevDates[0] ?? null;
+  const prevDayCandles = prevDayStr
+    ? candles.filter((c) => toDateString(new Date(c.timestamp)) === prevDayStr)
+    : [];
 
   // Opening range: first 30 min of session
   const openingRangeEnd = new Date(now);

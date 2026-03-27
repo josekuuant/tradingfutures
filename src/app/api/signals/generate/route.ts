@@ -1,11 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateSignal, getLastTrace } from "@/lib/services/signal-engine";
+import { INSTRUMENTS, TIMEFRAMES, type Instrument, type Timeframe } from "@/types/market";
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json().catch(() => ({}));
+    let body: Record<string, unknown> = {};
+    try {
+      body = await req.json();
+    } catch {
+      // Empty body is valid — uses strategy defaults
+    }
+
     const instrument = body.instrument as string | undefined;
     const timeframe = body.timeframe as string | undefined;
+
+    // Validate if provided
+    if (instrument && !INSTRUMENTS.includes(instrument as Instrument)) {
+      return NextResponse.json(
+        { error: `Invalid instrument. Valid: ${INSTRUMENTS.join(", ")}` },
+        { status: 400 }
+      );
+    }
+    if (timeframe && !TIMEFRAMES.includes(timeframe as Timeframe)) {
+      return NextResponse.json(
+        { error: `Invalid timeframe. Valid: ${TIMEFRAMES.join(", ")}` },
+        { status: 400 }
+      );
+    }
 
     const result = await generateSignal({ instrument, timeframe });
 
