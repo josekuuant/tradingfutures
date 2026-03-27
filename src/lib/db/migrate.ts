@@ -58,5 +58,53 @@ sqlite.exec(`
   );
 `);
 
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS prompts (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    tag TEXT NOT NULL DEFAULT '',
+    system_prompt TEXT NOT NULL DEFAULT '',
+    user_prompt_template TEXT NOT NULL,
+    output_schema TEXT NOT NULL DEFAULT '',
+    output_validation_rules TEXT NOT NULL DEFAULT '',
+    is_active INTEGER NOT NULL DEFAULT 0,
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+`);
+
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS prompt_versions (
+    id TEXT PRIMARY KEY,
+    prompt_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    system_prompt TEXT NOT NULL DEFAULT '',
+    user_prompt_template TEXT NOT NULL,
+    output_schema TEXT NOT NULL DEFAULT '',
+    output_validation_rules TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_prompt_versions_prompt
+    ON prompt_versions(prompt_id, version DESC);
+`);
+
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS prompt_test_runs (
+    id TEXT PRIMARY KEY,
+    prompt_id TEXT NOT NULL,
+    input_variables TEXT NOT NULL DEFAULT '{}',
+    rendered_prompt TEXT NOT NULL,
+    response TEXT NOT NULL DEFAULT '',
+    duration_ms INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_prompt_test_runs_prompt
+    ON prompt_test_runs(prompt_id, created_at DESC);
+`);
+
 console.log("✓ Database migrated successfully");
 sqlite.close();

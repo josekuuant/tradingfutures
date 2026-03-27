@@ -75,3 +75,64 @@ export const strategies = sqliteTable("strategies", {
 
 export type StrategyRow = typeof strategies.$inferSelect;
 export type NewStrategyRow = typeof strategies.$inferInsert;
+
+// ─── Prompts ─────────────────────────────────────────────────
+export const prompts = sqliteTable("prompts", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  tag: text("tag").notNull().default(""),
+  systemPrompt: text("system_prompt").notNull().default(""),
+  userPromptTemplate: text("user_prompt_template").notNull(),
+  outputSchema: text("output_schema").notNull().default(""),
+  outputValidationRules: text("output_validation_rules").notNull().default(""),
+  isActive: integer("is_active", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  version: integer("version").notNull().default(1),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});
+
+export type PromptRow = typeof prompts.$inferSelect;
+
+// ─── Prompt Versions (snapshots) ─────────────────────────────
+export const promptVersions = sqliteTable("prompt_versions", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  promptId: text("prompt_id").notNull(),
+  version: integer("version").notNull(),
+  systemPrompt: text("system_prompt").notNull().default(""),
+  userPromptTemplate: text("user_prompt_template").notNull(),
+  outputSchema: text("output_schema").notNull().default(""),
+  outputValidationRules: text("output_validation_rules").notNull().default(""),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});
+
+export type PromptVersionRow = typeof promptVersions.$inferSelect;
+
+// ─── Prompt Test Runs ────────────────────────────────────────
+export const promptTestRuns = sqliteTable("prompt_test_runs", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  promptId: text("prompt_id").notNull(),
+  inputVariables: text("input_variables").notNull().default("{}"),
+  renderedPrompt: text("rendered_prompt").notNull(),
+  response: text("response").notNull().default(""),
+  durationMs: integer("duration_ms").notNull().default(0),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});
+
+export type PromptTestRunRow = typeof promptTestRuns.$inferSelect;
