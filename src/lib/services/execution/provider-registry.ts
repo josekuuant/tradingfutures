@@ -3,6 +3,7 @@ import { getRawCredentials } from "@/lib/services/connections";
 import { MockExecutionAdapter } from "./adapter-mock";
 import { TradovateAdapter } from "./adapter-tradovate";
 import { TopstepXAdapter } from "./adapter-topstepx";
+import { NinjaTraderAdapter } from "./adapter-ninjatrader";
 import type {
   ExecutionProvider,
   ExecutionProviderAdapter,
@@ -99,14 +100,18 @@ export async function ensureAdaptersInitialized(): Promise<void> {
     // No Rithmic credentials
   }
 
-  // NinjaTrader — placeholder (mock for now)
+  // NinjaTrader
   try {
     const creds = await getRawCredentials("ninjatrader");
     if (creds?.host || creds?.apiKey) {
-      registerAdapter(new MockExecutionAdapter("ninjatrader"));
-      log.execution.info(
-        "NinjaTrader: credentials found, mock adapter registered (real adapter pending ATI bridge)"
-      );
+      const adapter = new NinjaTraderAdapter({
+        host: String(creds.host || "localhost"),
+        port: Number(creds.port) || 36973,
+        apiKey: creds.apiKey ? String(creds.apiKey) : undefined,
+        mode: (creds.mode as "native_api" | "desktop_bridge") ?? "native_api",
+      });
+      registerAdapter(adapter);
+      log.execution.info("NinjaTrader adapter initialized from stored credentials");
     }
   } catch {
     // No NinjaTrader credentials

@@ -52,6 +52,7 @@ export const ninjatraderCredentialsSchema = z.object({
   host: z.string().optional().default("localhost"),
   port: z.coerce.number().min(1).max(65535).optional().default(36973),
   apiKey: z.string().optional().default(""),
+  mode: z.enum(["native_api", "desktop_bridge"]).optional().default("native_api"),
 });
 
 export const topstepxCredentialsSchema = z.object({
@@ -233,11 +234,15 @@ export const PROVIDER_CONFIGS: ProviderConfig[] = [
     supportsEnvironment: true,
     environments: ["demo", "production"],
     fields: [
+      { key: "mode", label: "Connection Mode", type: "select", placeholder: "", required: false, options: [
+        { value: "native_api", label: "Native ATI API" },
+        { value: "desktop_bridge", label: "Desktop Bridge (coming soon)" },
+      ], helpText: "ATI requires NinjaTrader running locally" },
       { key: "host", label: "Host", type: "text", placeholder: "localhost", required: false, helpText: "NinjaTrader machine address" },
       { key: "port", label: "Port", type: "number", placeholder: "36973", required: false, helpText: "ATI server port" },
       { key: "apiKey", label: "API Key", type: "password", placeholder: "Optional — for cloud API", required: false },
     ],
-    notes: "Supports NinjaTrader ATI (Automated Trading Interface). Bridge mode for future expansion.",
+    notes: "Native API: connects to NinjaTrader ATI on localhost. Desktop Bridge: future local middleware option.",
   },
   {
     provider: "topstepx",
