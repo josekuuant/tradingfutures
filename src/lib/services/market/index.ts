@@ -89,8 +89,21 @@ export async function getMarketSnapshot(
   // Auto-detect adapter on first call
   await ensureAdapter();
 
-  // Quote is required — candles/health are best-effort
-  const rawQuote = await adapter.getQuote(instrument);
+  // Quote: try real adapter, fall back to mock on failure
+  let rawQuote;
+  try {
+    rawQuote = await adapter.getQuote(instrument);
+  } catch (err) {
+    if (adapter.name !== "mock") {
+      log.market.warn(
+        `${adapter.name} quote failed, falling back to mock: ${err instanceof Error ? err.message : "unknown"}`
+      );
+      const fallback = new MockMarketAdapter();
+      rawQuote = await fallback.getQuote(instrument);
+    } else {
+      throw err;
+    }
+  }
 
   let rawCandles: Awaited<ReturnType<typeof adapter.getCandles>> = [];
   try {

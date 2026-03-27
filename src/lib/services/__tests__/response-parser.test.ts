@@ -191,10 +191,10 @@ describe("parseClaudeResponse", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects confidence out of range", () => {
+  it("rejects confidence out of range (> 100)", () => {
     const outOfRange = JSON.stringify({
       action: "NO_TRADE",
-      confidence: 1.5,
+      confidence: 150,
       reasoning: "test",
       entry_price: null,
       stop_loss: null,
@@ -203,5 +203,22 @@ describe("parseClaudeResponse", () => {
     });
     const result = parseClaudeResponse(outOfRange);
     expect(result.success).toBe(false);
+  });
+
+  it("normalizes confidence 0-100 to 0-1", () => {
+    const highConf = JSON.stringify({
+      signal: "NO_TRADE",
+      confidence: 75,
+      reasoning: "test",
+      entry_price: null,
+      stop_loss: null,
+      take_profit: null,
+      risk_reward_ratio: null,
+    });
+    const result = parseClaudeResponse(highConf);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.confidence).toBe(0.75);
+    }
   });
 });
