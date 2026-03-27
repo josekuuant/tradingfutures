@@ -199,12 +199,13 @@ function checkNoTradeRules(strategy: Strategy): FilterResult {
     };
   }
 
-  // No-trade rules are text-based — they'll be evaluated by Claude.
-  // At this layer, we only check if they exist (Claude does the real evaluation).
+  // No-trade rules are natural language — injected into Claude prompt as {{no_trade_rules}}.
+  // Cannot be evaluated programmatically. Claude is responsible for honoring them.
+  // This filter passes but signals to the trace that rules exist and are delegated.
   return {
     filter: "no_trade_rules",
     verdict: "pass",
-    reason: "No-trade rules defined — will be evaluated by Claude",
+    reason: `No-trade rules active (${strategy.noTradeRules.length} chars) — delegated to Claude via prompt`,
   };
 }
 
@@ -217,12 +218,12 @@ function checkScheduleFilter(strategy: Strategy): FilterResult {
     };
   }
 
-  // Schedule filters are text-based for Claude's evaluation.
-  // Engine-level schedule is handled by checkTradingHours.
+  // Schedule filters are natural language — delegated to Claude.
+  // Hard schedule boundaries enforced by checkTradingHours above.
   return {
     filter: "schedule_filter",
     verdict: "pass",
-    reason: "Schedule filter defined — will be evaluated by Claude",
+    reason: `Schedule filter active (${strategy.scheduleFilter.length} chars) — delegated to Claude`,
   };
 }
 
@@ -235,11 +236,12 @@ function checkNewsFilter(strategy: Strategy): FilterResult {
     };
   }
 
-  // News risk is text-based — placeholder for future news API integration
+  // News risk is natural language — no news API integrated yet.
+  // Delegated to Claude prompt. User must verify manually before FOMC/CPI/NFP etc.
   return {
     filter: "news_filter",
     verdict: "pass",
-    reason: "News filter defined — manual check required (no news API connected)",
+    reason: `News filter active (${strategy.newsFilter.length} chars) — delegated to Claude (no news API)`,
   };
 }
 

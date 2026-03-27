@@ -12,6 +12,7 @@ import {
 import {
   runGuardrails,
   recordIdempotencyKey,
+  clearPendingKey,
   recordOrderTimestamp,
 } from "./guardrails";
 import {
@@ -197,6 +198,7 @@ export async function placeOrder(
     const riskCheck = checkRiskControls(target, request.instrument);
     if (!riskCheck.allowed) {
       log.execution.error(`Risk control blocked: ${riskCheck.reason}`);
+      clearPendingKey(request.idempotencyKey!);
       return {
         success: false,
         error: riskCheck.reason,
@@ -205,6 +207,7 @@ export async function placeOrder(
     }
     if (riskCheck.forceSafeMode) {
       log.execution.warn("Risk control forcing safe mode");
+      clearPendingKey(request.idempotencyKey!);
       return {
         success: false,
         requiresApproval: true,
@@ -217,9 +220,11 @@ export async function placeOrder(
 
   if (!bypassModeGate) {
     if (executionMode === "disabled") {
+      clearPendingKey(request.idempotencyKey!);
       return { success: false, error: "Execution is disabled", errorCode: "DISABLED" };
     }
     if (executionMode === "monitor") {
+      clearPendingKey(request.idempotencyKey!);
       return { success: false, error: "Monitor mode — orders not allowed", errorCode: "MONITOR_MODE" };
     }
     if (executionMode === "manual_approval") {
@@ -283,6 +288,7 @@ export async function placeOrder(
   );
 
   if (!guardrailResult.passed) {
+    clearPendingKey(request.idempotencyKey!);
     if (guardrailResult.errorCode === "DUPLICATE_ORDER") {
       anomaly.duplicateExecution(request.instrument, guardrailResult.error ?? "");
     } else {
@@ -331,6 +337,7 @@ export async function placeOrder(
   const finalRiskCheck = checkRiskControls(target, request.instrument);
   if (!finalRiskCheck.allowed) {
     log.execution.error(`Final risk check blocked: ${finalRiskCheck.reason}`);
+    clearPendingKey(request.idempotencyKey!);
     return { success: false, error: finalRiskCheck.reason, errorCode: "CIRCUIT_BREAKER" };
   }
 
@@ -363,6 +370,7 @@ export async function placeOrder(
     return { success: true, order };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
+    clearPendingKey(request.idempotencyKey!);
     recordFailure(target, guardrails.circuitBreakerThreshold);
     anomaly.rejection(target, `Provider error: ${msg}`);
 
@@ -381,6 +389,10 @@ export async function confirmOrder(
   request: OrderRequest,
   provider?: ExecutionProvider
 ): Promise<OrderResult> {
+  // Ensure idempotency key is set so the confirmed order can be tracked
+  if (!request.idempotencyKey) {
+    request.idempotencyKey = crypto.randomUUID();
+  }
   // Use bypassModeGate flag instead of mutating global state
   return placeOrder(request, provider, { bypassModeGate: true });
 }

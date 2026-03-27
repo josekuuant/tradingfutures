@@ -10,7 +10,13 @@ const IV_LENGTH = 16;
 function getKey(): Buffer {
   const secret = process.env.ENCRYPTION_KEY;
   if (!secret) {
-    // Dev fallback — NOT secure for production
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "ENCRYPTION_KEY environment variable is required in production. " +
+        "Set it to a random 32+ character string in your .env.local file."
+      );
+    }
+    // Dev-only fallback — NOT secure for production
     return crypto.scryptSync("tradingfutures-dev-key", "salt", 32);
   }
   return crypto.scryptSync(secret, "tradingfutures", 32);

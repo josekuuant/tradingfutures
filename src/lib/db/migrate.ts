@@ -172,6 +172,18 @@ sqlite.exec(`
     ON signals(created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_signals_action
     ON signals(action);
+  CREATE INDEX IF NOT EXISTS idx_signals_strategy
+    ON signals(strategy_id);
+  CREATE INDEX IF NOT EXISTS idx_signals_prompt
+    ON signals(prompt_id);
+  CREATE INDEX IF NOT EXISTS idx_signals_instrument_tf
+    ON signals(instrument, timeframe, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_signals_confidence
+    ON signals(confidence DESC);
+  CREATE INDEX IF NOT EXISTS idx_strategies_active
+    ON strategies(is_active) WHERE is_active = 1;
+  CREATE INDEX IF NOT EXISTS idx_prompts_active
+    ON prompts(is_active) WHERE is_active = 1;
 `);
 
 sqlite.exec(`

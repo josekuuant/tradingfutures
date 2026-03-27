@@ -31,10 +31,17 @@ export function registerAdapter(adapter: ExecutionProviderAdapter): void {
 export function unregisterAdapter(provider: ExecutionProvider): void {
   const existing = adapters.get(provider);
   if (existing) {
-    existing.disconnect().catch(() => {});
+    existing.disconnect().catch((err) => {
+      log.execution.warn(`Disconnect failed for ${provider}: ${err}`);
+    });
     adapters.delete(provider);
     log.execution.info(`Unregistered execution adapter: ${provider}`);
   }
+}
+
+/** Reset initialization so next call to ensureAdaptersInitialized re-runs */
+export function resetInitialization(): void {
+  initPromise = null;
 }
 
 // ─── Auto-initialize from stored credentials ────────────────

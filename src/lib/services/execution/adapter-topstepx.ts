@@ -60,6 +60,7 @@ export class TopstepXAdapter implements ExecutionProviderAdapter {
   private lastSuccessAt: string | null = null;
   private consecutiveFailures = 0;
   private lastRequestAt = 0;
+  private isBlockedEnvironment = false;
 
   constructor(
     credentials: TopstepXCredentials,
@@ -79,12 +80,13 @@ export class TopstepXAdapter implements ExecutionProviderAdapter {
         process.env.DOCKER_CONTAINER === "true" ||
         process.env.KUBERNETES_SERVICE_HOST != null);
 
+    this.isBlockedEnvironment = isLikelyServer;
     if (isLikelyServer) {
       log.execution.critical(
-        "TopstepX WARNING: Detected server/cloud environment. " +
+        "TopstepX BLOCKED: Detected server/cloud environment. " +
           "TopstepX Terms of Service PROHIBIT VPS/remote server usage. " +
           "All API calls must originate from your personal device. " +
-          "Automated execution disabled for safety."
+          "Order execution will be rejected."
       );
     }
   }
@@ -280,6 +282,12 @@ export class TopstepXAdapter implements ExecutionProviderAdapter {
     request: OrderRequest,
     accountId: string
   ): Promise<NormalizedOrder> {
+    if (this.isBlockedEnvironment) {
+      throw new Error(
+        "TopstepX: Order execution BLOCKED — server/cloud environment detected. " +
+        "TopstepX ToS requires personal device only."
+      );
+    }
     const body = {
       accountId: Number(accountId),
       contractId: request.instrument,

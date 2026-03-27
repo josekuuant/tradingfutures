@@ -1,6 +1,7 @@
 import { db, schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
 import { encrypt, decrypt, isEncrypted } from "@/lib/crypto";
+import { log } from "@/lib/logger";
 import {
   type Provider,
   type ConnectionResponse,
@@ -36,11 +37,18 @@ function maskCredentials(
 
 /** Read credentials from DB, decrypting if needed */
 function readCredentials(raw: string): Record<string, unknown> {
-  if (isEncrypted(raw)) {
-    return JSON.parse(decrypt(raw));
+  try {
+    if (isEncrypted(raw)) {
+      return JSON.parse(decrypt(raw));
+    }
+    // Legacy: unencrypted JSON — parse but log warning for migration
+    const parsed = JSON.parse(raw);
+    log.system.warn("Legacy unencrypted credentials detected — will be encrypted on next save");
+    return parsed;
+  } catch (err) {
+    log.system.error(`Failed to read credentials: ${err instanceof Error ? err.message : "unknown"}`);
+    return {};
   }
-  // Legacy: unencrypted JSON (will be encrypted on next save)
-  return JSON.parse(raw);
 }
 
 /** Map DB row to API response (never exposes raw credentials) */
