@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { BarChart3, RefreshCw, Loader2 } from "lucide-react";
 import type { MarketSnapshot, Instrument, Timeframe } from "@/types/market";
+import { PriceChart } from "@/components/charts/price-chart";
 import { QuotePanel } from "@/components/market/quote-panel";
 import { FeedHealthPanel } from "@/components/market/feed-health";
 import { SessionLevelsPanel } from "@/components/market/session-levels";
@@ -42,13 +43,11 @@ export default function MarketPage() {
     [instrument, timeframe]
   );
 
-  // Initial load + on instrument/timeframe change
   useEffect(() => {
     setLoading(true);
     fetchData();
   }, [fetchData]);
 
-  // Auto-refresh
   useEffect(() => {
     if (autoRefresh) {
       intervalRef.current = setInterval(() => fetchData(true), 5000);
@@ -78,7 +77,6 @@ export default function MarketPage() {
           <InstrumentSelector value={instrument} onChange={setInstrument} />
           <TimeframeSelector value={timeframe} onChange={setTimeframe} />
 
-          {/* Auto-refresh toggle */}
           <button
             onClick={() => setAutoRefresh(!autoRefresh)}
             className={
@@ -90,7 +88,6 @@ export default function MarketPage() {
             {autoRefresh ? "Auto: ON" : "Auto: OFF"}
           </button>
 
-          {/* Manual refresh */}
           <button
             onClick={() => fetchData()}
             disabled={refreshing}
@@ -113,19 +110,30 @@ export default function MarketPage() {
         </div>
       )}
 
-      {/* ── Loading skeleton ────────────────────────────────── */}
+      {/* ── Loading ─────────────────────────────────────────── */}
       {loading ? (
-        <div className="grid gap-4 lg:grid-cols-3">
-          {[1, 2, 3].map((i) => (
-            <div
-              key={i}
-              className="h-64 animate-pulse rounded-lg border border-border bg-card"
-            />
-          ))}
+        <div className="space-y-4">
+          <div className="h-[460px] animate-pulse rounded-lg border border-border bg-card" />
+          <div className="grid gap-4 lg:grid-cols-3">
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="h-64 animate-pulse rounded-lg border border-border bg-card"
+              />
+            ))}
+          </div>
         </div>
       ) : (
         <>
-          {/* ── Row 1: Quote + Health + Candle info ──────────── */}
+          {/* ── Chart ───────────────────────────────────────── */}
+          <PriceChart
+            candles={snapshot?.recentCandles ?? []}
+            levels={snapshot?.levels}
+            signals={[]}
+            height={460}
+          />
+
+          {/* ── Row 2: Quote + Health + Candle info ──────────── */}
           <div className="grid gap-4 lg:grid-cols-3">
             <QuotePanel quote={snapshot?.quote ?? null} />
             <FeedHealthPanel
@@ -142,7 +150,7 @@ export default function MarketPage() {
             />
           </div>
 
-          {/* ── Row 2: Levels + Stream ──────────────────────── */}
+          {/* ── Row 3: Levels + Stream ──────────────────────── */}
           <div className="grid gap-4 lg:grid-cols-2">
             <SessionLevelsPanel
               levels={snapshot?.levels ?? null}
@@ -156,7 +164,7 @@ export default function MarketPage() {
   );
 }
 
-// ─── Small inline component for candle summary ───────────────
+// ─── Candle summary card ─────────────────────────────────────
 
 function CandleInfo({
   count,
@@ -167,19 +175,24 @@ function CandleInfo({
   count: number;
   timeframe: string;
   instrument: string;
-  lastCandle: { open: number; high: number; low: number; close: number; volume: number; timestamp: string } | null;
+  lastCandle: {
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: number;
+    timestamp: string;
+  } | null;
 }) {
   return (
     <div className="rounded-lg border border-border bg-card p-4">
       <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
         Candle Data
       </p>
-
       <div className="mt-3 space-y-2.5">
         <InfoRow label="Instrument" value={instrument} />
         <InfoRow label="Timeframe" value={timeframe} />
         <InfoRow label="Candles loaded" value={String(count)} />
-
         {lastCandle && (
           <>
             <div className="border-t border-border pt-2">
