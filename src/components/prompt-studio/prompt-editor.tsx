@@ -117,7 +117,7 @@ export function PromptEditor({ prompt, onSave, onClose }: PromptEditorProps) {
               </span>
             )}
           </div>
-          <button onClick={onClose} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
+          <button onClick={onClose} aria-label="Close dialog" className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground">
             <X className="h-4 w-4" />
           </button>
         </div>

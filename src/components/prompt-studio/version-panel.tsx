@@ -20,6 +20,7 @@ export function VersionPanel({
 }: VersionPanelProps) {
   const [versions, setVersions] = useState<PromptVersion[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [restoringId, setRestoringId] = useState<string | null>(null);
 
@@ -30,9 +31,11 @@ export function VersionPanel({
         if (res.ok) {
           const data = await res.json();
           setVersions(data.versions ?? []);
+        } else {
+          setError("Failed to load versions");
         }
       } catch {
-        // silent
+        setError("Connection error");
       } finally {
         setLoading(false);
       }
@@ -67,6 +70,10 @@ export function VersionPanel({
           {loading ? (
             <div className="flex h-32 items-center justify-center">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : error ? (
+            <div className="flex h-32 items-center justify-center">
+              <p className="text-sm text-danger">{error}</p>
             </div>
           ) : versions.length === 0 ? (
             <div className="flex h-32 items-center justify-center">

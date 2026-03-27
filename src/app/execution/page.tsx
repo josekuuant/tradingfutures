@@ -86,12 +86,20 @@ export default function ExecutionPage() {
     action: string,
     payload?: Record<string, string>
   ) => {
-    await fetch("/api/execution/risk", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, ...payload }),
-    });
-    await fetchState();
+    try {
+      const res = await fetch("/api/execution/risk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, ...payload }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setTestResult({ ok: false, message: data.error ?? "Risk action failed" });
+      }
+      await fetchState();
+    } catch {
+      setTestResult({ ok: false, message: "Risk action failed — connection error" });
+    }
   };
 
   const handleQueueAction = async (
@@ -99,12 +107,20 @@ export default function ExecutionPage() {
     action: string,
     reason?: string
   ) => {
-    await fetch(`/api/execution/queue/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, reason }),
-    });
-    await fetchState();
+    try {
+      const res = await fetch(`/api/execution/queue/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, reason }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setTestResult({ ok: false, message: data.error ?? "Queue action failed" });
+      }
+      await fetchState();
+    } catch {
+      setTestResult({ ok: false, message: "Queue action failed — connection error" });
+    }
   };
 
   const pendingCount = queueStats.pending ?? 0;

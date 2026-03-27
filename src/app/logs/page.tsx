@@ -28,6 +28,7 @@ export default function LogsPage() {
   const [health, setHealth] = useState<SystemHealth | null>(null);
   const [filters, setFilters] = useState<LogFilters>(DEFAULT_FILTERS);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -57,8 +58,8 @@ export default function LogsPage() {
           const data = await healthRes.json();
           setHealth(data.health);
         }
-      } catch (err) {
-        console.error("Failed to fetch logs:", err);
+      } catch {
+        if (!silent) setError("Failed to load logs");
       } finally {
         setLoading(false);
       }
@@ -138,6 +139,14 @@ export default function LogsPage() {
           />
         </div>
       </div>
+
+      {/* Error state */}
+      {error && (
+        <div className="rounded-md bg-danger/10 px-4 py-3 text-sm text-danger">
+          {error}
+          <button onClick={() => fetchData()} className="ml-2 underline">Retry</button>
+        </div>
+      )}
 
       {/* Filters */}
       <LogFiltersBar

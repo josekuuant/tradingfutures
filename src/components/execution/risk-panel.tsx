@@ -102,7 +102,11 @@ export function RiskPanel({ status, onAction }: RiskPanelProps) {
             </button>
           ) : (
             <button
-              onClick={() => handle("kill_global")}
+              onClick={() => {
+                if (window.confirm("Activate GLOBAL kill switch? This will block ALL order execution immediately.")) {
+                  handle("kill_global");
+                }
+              }}
               disabled={loading === "kill_global"}
               className="inline-flex items-center gap-1 rounded bg-danger/10 px-2.5 py-1 text-[10px] font-bold text-danger hover:bg-danger/20 disabled:opacity-50"
             >

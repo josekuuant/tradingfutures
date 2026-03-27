@@ -13,8 +13,10 @@ interface TestPanelProps {
 export function TestPanel({ prompt, onClose }: TestPanelProps) {
   const [variables, setVariables] = useState<Record<string, string>>({});
   const [testing, setTesting] = useState(false);
+  const [testError, setTestError] = useState<string | null>(null);
   const [testRuns, setTestRuns] = useState<PromptTestRun[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   // Load test history
   useEffect(() => {
@@ -26,7 +28,7 @@ export function TestPanel({ prompt, onClose }: TestPanelProps) {
           setTestRuns(data.testRuns ?? []);
         }
       } catch {
-        // silent
+        setHistoryError("Failed to load test history");
       } finally {
         setLoadingHistory(false);
       }
@@ -51,9 +53,12 @@ export function TestPanel({ prompt, onClose }: TestPanelProps) {
       if (res.ok) {
         const run: PromptTestRun = await res.json();
         setTestRuns((prev) => [run, ...prev]);
+        setTestError(null);
+      } else {
+        setTestError("Test failed — check Claude API configuration");
       }
     } catch {
-      // silent
+      setTestError("Test failed — connection error");
     } finally {
       setTesting(false);
     }
@@ -127,6 +132,11 @@ export function TestPanel({ prompt, onClose }: TestPanelProps) {
             </button>
           </div>
 
+          {/* Error display */}
+          {testError && (
+            <div className="mx-5 rounded bg-danger/10 px-3 py-2 text-xs text-danger">{testError}</div>
+          )}
+
           {/* Test history */}
           <div className="px-5 py-4">
             <p className="mb-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -137,6 +147,8 @@ export function TestPanel({ prompt, onClose }: TestPanelProps) {
               <div className="flex h-20 items-center justify-center">
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
               </div>
+            ) : historyError ? (
+              <p className="text-xs text-danger">{historyError}</p>
             ) : testRuns.length === 0 ? (
               <p className="text-xs text-muted-foreground/50">No test runs yet</p>
             ) : (
