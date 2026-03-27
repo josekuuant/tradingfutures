@@ -136,3 +136,36 @@ export const promptTestRuns = sqliteTable("prompt_test_runs", {
 });
 
 export type PromptTestRunRow = typeof promptTestRuns.$inferSelect;
+
+// ─── Signals ─────────────────────────────────────────────────
+export const signals = sqliteTable("signals", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  strategyId: text("strategy_id").notNull(),
+  strategyName: text("strategy_name").notNull(),
+  promptId: text("prompt_id").notNull(),
+  promptName: text("prompt_name").notNull(),
+  action: text("action").notNull(), // BUY | SELL | NO_TRADE
+  confidence: integer("confidence").notNull(), // stored as 0-100
+  reasoning: text("reasoning").notNull(),
+  entryPrice: text("entry_price"), // stored as text to preserve decimals
+  stopLoss: text("stop_loss"),
+  takeProfit: text("take_profit"),
+  riskRewardRatio: text("risk_reward_ratio"),
+  invalidation: text("invalidation").notNull().default(""),
+  marketContext: text("market_context").notNull().default(""),
+  instrument: text("instrument").notNull(),
+  timeframe: text("timeframe").notNull(),
+  currentPrice: text("current_price").notNull(),
+  claudeModel: text("claude_model").notNull(),
+  systemPromptSent: text("system_prompt_sent").notNull(),
+  userPromptSent: text("user_prompt_sent").notNull(),
+  rawResponse: text("raw_response").notNull(),
+  durationMs: integer("duration_ms").notNull(),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+});
+
+export type SignalRow = typeof signals.$inferSelect;

@@ -106,5 +106,38 @@ sqlite.exec(`
     ON prompt_test_runs(prompt_id, created_at DESC);
 `);
 
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS signals (
+    id TEXT PRIMARY KEY,
+    strategy_id TEXT NOT NULL,
+    strategy_name TEXT NOT NULL,
+    prompt_id TEXT NOT NULL,
+    prompt_name TEXT NOT NULL,
+    action TEXT NOT NULL CHECK (action IN ('BUY', 'SELL', 'NO_TRADE')),
+    confidence INTEGER NOT NULL,
+    reasoning TEXT NOT NULL,
+    entry_price TEXT,
+    stop_loss TEXT,
+    take_profit TEXT,
+    risk_reward_ratio TEXT,
+    invalidation TEXT NOT NULL DEFAULT '',
+    market_context TEXT NOT NULL DEFAULT '',
+    instrument TEXT NOT NULL,
+    timeframe TEXT NOT NULL,
+    current_price TEXT NOT NULL,
+    claude_model TEXT NOT NULL,
+    system_prompt_sent TEXT NOT NULL,
+    user_prompt_sent TEXT NOT NULL,
+    raw_response TEXT NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_signals_created
+    ON signals(created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_signals_action
+    ON signals(action);
+`);
+
 console.log("✓ Database migrated successfully");
 sqlite.close();
