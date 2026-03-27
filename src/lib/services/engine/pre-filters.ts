@@ -285,11 +285,37 @@ function checkDuplicateSignal(
 
 // ─── Helpers ─────────────────────────────────────────────────
 
+/**
+ * Determines if a UTC date falls within US Eastern Daylight Time.
+ * US DST: 2nd Sunday of March 2:00 AM → 1st Sunday of November 2:00 AM.
+ * This is server-timezone-independent — uses only UTC + DST rules.
+ */
 function isDST(date: Date): boolean {
-  const jan = new Date(date.getFullYear(), 0, 1).getTimezoneOffset();
-  const jul = new Date(date.getFullYear(), 6, 1).getTimezoneOffset();
-  const max = Math.max(jan, jul);
-  return date.getTimezoneOffset() < max;
+  const year = date.getUTCFullYear();
+  const month = date.getUTCMonth(); // 0-indexed
+
+  // Jan, Feb, Dec = definitely EST (no DST)
+  if (month < 2 || month > 10) return false;
+  // Apr–Oct = definitely EDT (DST active)
+  if (month > 2 && month < 10) return true;
+
+  // March: DST starts 2nd Sunday at 2:00 AM ET (7:00 AM UTC)
+  if (month === 2) {
+    const firstDay = new Date(Date.UTC(year, 2, 1)).getUTCDay();
+    const secondSunday = firstDay === 0 ? 8 : 15 - firstDay;
+    const dstStart = Date.UTC(year, 2, secondSunday, 7, 0, 0); // 2AM ET = 7AM UTC
+    return date.getTime() >= dstStart;
+  }
+
+  // November: DST ends 1st Sunday at 2:00 AM EDT (6:00 AM UTC)
+  if (month === 10) {
+    const firstDay = new Date(Date.UTC(year, 10, 1)).getUTCDay();
+    const firstSunday = firstDay === 0 ? 1 : 8 - firstDay;
+    const dstEnd = Date.UTC(year, 10, firstSunday, 6, 0, 0); // 2AM EDT = 6AM UTC
+    return date.getTime() < dstEnd;
+  }
+
+  return false;
 }
 
 function fmtHour(decimal: number): string {
