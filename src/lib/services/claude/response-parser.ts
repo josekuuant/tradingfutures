@@ -1,6 +1,7 @@
 import {
   claudeSignalResponseSchema,
   type ClaudeSignalResponse,
+  type SignalAction,
 } from "@/types/signal";
 
 // ─── Types ───────────────────────────────────────────────────
@@ -22,9 +23,8 @@ export function parseClaudeResponse(
 ): ParseResult {
   const { minConfidence = 0 } = options;
 
-  // Step 1: Extract JSON from response (Claude sometimes wraps in markdown)
+  // Step 1: Extract JSON
   const jsonStr = extractJson(rawContent);
-
   if (!jsonStr) {
     return {
       success: false,
@@ -45,9 +45,8 @@ export function parseClaudeResponse(
     };
   }
 
-  // Step 3: Validate against schema
+  // Step 3: Validate against flexible schema
   const result = claudeSignalResponseSchema.safeParse(parsed);
-
   if (!result.success) {
     const issues = result.error.issues
       .map((i) => `${i.path.join(".")}: ${i.message}`)
@@ -59,8 +58,71 @@ export function parseClaudeResponse(
     };
   }
 
-  // Step 4: Business logic validation
-  const data = result.data;
+  // Step 4: Normalize to ClaudeSignalResponse
+  const raw = result.data;
+
+  // Resolve action: "signal" key (new format) or "action" key (old format)
+  const action: SignalAction = (raw.signal ?? raw.action)!;
+
+  // Normalize confidence: if > 1, treat as 0-100 scale → convert to 0-1
+  let confidence = raw.confidence;
+  if (confidence > 1) {
+    confidence = confidence / 100;
+  }
+
+  // Normalize reasoning: array → joined string
+  const reasoning = Array.isArray(raw.reasoning)
+    ? raw.reasoning.filter(Boolean).join(" | ")
+    : raw.reasoning;
+
+  // Normalize entry price: entry_zone.min or entry_price
+  const entryPrice =
+    raw.entry_price ??
+    raw.entry_zone?.min ??
+    null;
+
+  // Normalize take profit: take_profit_1 or take_profit
+  const takeProfit = raw.take_profit_1 ?? raw.take_profit ?? null;
+  const takeProfit2 = raw.take_profit_2 ?? null;
+
+  // Normalize R:R: parse from string like "1:3" or use numeric
+  let rrRatio = raw.risk_reward_ratio ?? null;
+  if (rrRatio == null && raw.risk_reward_estimate) {
+    const match = raw.risk_reward_estimate.match(/1:(\d+(?:\.\d+)?)/);
+    if (match) rrRatio = parseFloat(match[1]);
+  }
+
+  // Normalize invalidation
+  const invalidation = raw.invalidation_condition || raw.invalidation || "";
+
+  // Normalize market context
+  const marketContext = [
+    raw.market_state,
+    raw.market_context,
+    raw.bias ? `Bias: ${raw.bias}` : "",
+    raw.setup_type ? `Setup: ${raw.setup_type}` : "",
+  ]
+    .filter(Boolean)
+    .join(" | ") || "";
+
+  const data: ClaudeSignalResponse = {
+    action,
+    confidence,
+    reasoning,
+    entry_price: entryPrice,
+    stop_loss: raw.stop_loss,
+    take_profit: takeProfit,
+    risk_reward_ratio: rrRatio,
+    invalidation,
+    market_context: marketContext,
+    market_state: raw.market_state ?? "",
+    bias: raw.bias ?? "",
+    setup_type: raw.setup_type ?? "",
+    take_profit_2: takeProfit2,
+    warning: raw.warning ?? "",
+  };
+
+  // Step 5: Business logic validation
 
   if (data.confidence < 0 || data.confidence > 1) {
     return {
@@ -71,16 +133,16 @@ export function parseClaudeResponse(
   }
 
   if (data.action === "BUY" || data.action === "SELL") {
-    // B2: Require entry_price
+    // Require entry_price
     if (data.entry_price == null) {
       return {
         success: false,
-        error: `${data.action} signal requires entry_price`,
+        error: `${data.action} signal requires entry_price or entry_zone`,
         rawContent,
       };
     }
 
-    // B2: Require stop_loss for risk management
+    // Require stop_loss
     if (data.stop_loss == null) {
       return {
         success: false,
@@ -89,14 +151,13 @@ export function parseClaudeResponse(
       };
     }
 
-    // B3: Enforce minimum confidence
+    // Enforce minimum confidence
     if (data.confidence < minConfidence) {
-      // Don't reject — downgrade to NO_TRADE with original reasoning
       data.action = "NO_TRADE";
       data.reasoning = `[LOW CONFIDENCE: ${Math.round(data.confidence * 100)}% < ${Math.round(minConfidence * 100)}% min] ${data.reasoning}`;
     }
 
-    // M6: Verify R:R consistency if all three prices present
+    // Verify R:R consistency
     if (
       data.action !== "NO_TRADE" &&
       data.entry_price != null &&
@@ -109,13 +170,11 @@ export function parseClaudeResponse(
       const computedRR = risk > 0 ? reward / risk : 0;
       const claimedRR = data.risk_reward_ratio;
 
-      // Allow 30% tolerance — flag but don't reject
       if (
         computedRR > 0 &&
         claimedRR > 0 &&
         Math.abs(computedRR - claimedRR) / computedRR > 0.3
       ) {
-        // Override with computed value
         data.risk_reward_ratio = Math.round(computedRR * 100) / 100;
         data.reasoning += ` [R:R corrected from ${claimedRR.toFixed(2)} to ${data.risk_reward_ratio.toFixed(2)}]`;
       }
@@ -128,19 +187,16 @@ export function parseClaudeResponse(
 // ─── JSON extraction ─────────────────────────────────────────
 
 function extractJson(text: string): string | null {
-  // Try the whole string first
   const trimmed = text.trim();
   if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
     return trimmed;
   }
 
-  // Try to extract from markdown code block
   const codeBlockMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
   if (codeBlockMatch) {
     return codeBlockMatch[1].trim();
   }
 
-  // Try to find first { ... } block
   const firstBrace = trimmed.indexOf("{");
   const lastBrace = trimmed.lastIndexOf("}");
   if (firstBrace !== -1 && lastBrace > firstBrace) {

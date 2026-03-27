@@ -2,6 +2,7 @@ import type { Strategy } from "@/types/strategy";
 import type { Prompt } from "@/types/prompt";
 import type { MarketSnapshot } from "@/types/market";
 import { renderTemplate } from "@/lib/services/prompts";
+import { INSTITUTIONAL_SYSTEM_PROMPT } from "./system-prompt";
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -24,12 +25,14 @@ export function assemblePrompt(
   // Render user prompt template with variables
   const userPrompt = renderTemplate(prompt.userPromptTemplate, variables);
 
-  // System prompt: use prompt's system prompt, or build a default
-  let systemPrompt = prompt.systemPrompt;
-  if (!systemPrompt) {
-    systemPrompt = buildDefaultSystemPrompt(prompt);
+  // System prompt priority:
+  // 1. Custom system prompt from Prompt Studio (if defined)
+  // 2. Institutional default system prompt
+  let systemPrompt: string;
+  if (prompt.systemPrompt && prompt.systemPrompt.trim().length > 0) {
+    systemPrompt = renderTemplate(prompt.systemPrompt, variables);
   } else {
-    systemPrompt = renderTemplate(systemPrompt, variables);
+    systemPrompt = INSTITUTIONAL_SYSTEM_PROMPT;
   }
 
   return {
@@ -67,6 +70,7 @@ function buildVariables(
     spread: q.spread.toFixed(2),
     volume: q.volume.toLocaleString(),
     ohlcv_data: candleStr,
+    candle_count: String(recentCandles.length),
     session_high: fmt(l.sessionHigh),
     session_low: fmt(l.sessionLow),
     vwap: fmt(l.vwap),
@@ -82,6 +86,13 @@ function buildVariables(
     entry_conditions: strategy.entryConditions || "None specified",
     invalidation: strategy.invalidation || "None specified",
     no_trade_rules: strategy.noTradeRules || "None specified",
+    tp1_rule: strategy.tp1 || "Not specified",
+    tp2_rule: strategy.tp2 || "Not specified",
+    min_rr: String(strategy.minRR),
+    volatility_filter: strategy.volatilityFilter || "None",
+    volume_filter: strategy.volumeFilter || "None",
+    schedule_filter: strategy.scheduleFilter || "None",
+    news_filter: strategy.newsFilter || "None",
     timestamp: new Date().toISOString(),
   };
 }
@@ -89,39 +100,3 @@ function buildVariables(
 function fmt(v: number | null): string {
   return v != null ? v.toFixed(2) : "N/A";
 }
-
-// ─── Default system prompt ───────────────────────────────────
-
-function buildDefaultSystemPrompt(prompt: Prompt): string {
-  let sys = `You are a professional NQ/MNQ futures analyst. Analyze the provided market data and strategy conditions to generate a trading signal.
-
-You MUST respond with ONLY a valid JSON object matching this exact schema:
-${prompt.outputSchema || DEFAULT_SCHEMA}
-
-Rules:
-- action MUST be exactly "BUY", "SELL", or "NO_TRADE"
-- confidence MUST be a number between 0.0 and 1.0
-- reasoning MUST be a concise explanation (2-4 sentences)
-- If action is "NO_TRADE", entry_price/stop_loss/take_profit should be null
-- If action is "BUY" or "SELL", provide numeric entry_price/stop_loss/take_profit
-- risk_reward_ratio should be calculated as |TP - Entry| / |Entry - SL|
-- Do NOT include any text before or after the JSON object`;
-
-  if (prompt.outputValidationRules) {
-    sys += `\n\nAdditional validation rules:\n${prompt.outputValidationRules}`;
-  }
-
-  return sys;
-}
-
-const DEFAULT_SCHEMA = `{
-  "action": "BUY" | "SELL" | "NO_TRADE",
-  "confidence": 0.0 - 1.0,
-  "reasoning": "string",
-  "entry_price": number | null,
-  "stop_loss": number | null,
-  "take_profit": number | null,
-  "risk_reward_ratio": number | null,
-  "invalidation": "string",
-  "market_context": "string"
-}`;
