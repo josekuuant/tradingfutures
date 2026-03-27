@@ -105,7 +105,7 @@ export default function MarketPage() {
       </div>
 
       {/* ── Mock warning ────────────────────────────────────── */}
-      <MockDataBanner adapterName="mock" />
+      <MockDataBanner />
 
       {/* ── Error ───────────────────────────────────────────── */}
       {error && (

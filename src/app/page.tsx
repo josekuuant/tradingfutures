@@ -15,7 +15,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* ── Mock data warning ──────────────────────────────────── */}
-      <MockDataBanner adapterName="mock" />
+      <MockDataBanner />
 
       {/* ── Row 1: Connection Status ──────────────────────────── */}
       <div className="grid gap-4 sm:grid-cols-3">

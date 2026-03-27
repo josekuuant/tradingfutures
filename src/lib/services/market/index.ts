@@ -7,13 +7,16 @@ import type {
   StreamEntry,
 } from "@/types/market";
 import { MockMarketAdapter } from "./adapter-mock";
+import { DatabentoAdapter } from "./adapter-databento";
 import { normalizeQuote, normalizeCandles } from "./normalizer";
 import { computeSessionLevels } from "./derived-metrics";
+import { getRawCredentials } from "@/lib/services/connections";
+import { log } from "@/lib/logger";
 
 // ─── Adapter registry ────────────────────────────────────────
-// Swap MockMarketAdapter → DatabentoAdapter when ready
 
 let adapter: MarketDataAdapter = new MockMarketAdapter();
+let adapterInitialized = false;
 
 export function getAdapter(): MarketDataAdapter {
   return adapter;
@@ -21,6 +24,35 @@ export function getAdapter(): MarketDataAdapter {
 
 export function setAdapter(a: MarketDataAdapter): void {
   adapter = a;
+  adapterInitialized = true;
+  log.market.info(`Market adapter set to: ${a.name}`);
+}
+
+/**
+ * Auto-detect adapter: if Databento credentials exist, use DatabentoAdapter.
+ * Otherwise fall back to MockMarketAdapter.
+ * Called lazily on first market data request.
+ */
+async function ensureAdapter(): Promise<void> {
+  if (adapterInitialized) return;
+  adapterInitialized = true; // prevent re-entry
+
+  try {
+    const creds = await getRawCredentials("databento");
+    const apiKey = creds?.apiKey as string | undefined;
+
+    if (apiKey && apiKey.length > 0) {
+      adapter = new DatabentoAdapter(apiKey);
+      log.market.info("Databento adapter initialized with stored credentials");
+    } else {
+      log.market.info("No Databento credentials — using mock adapter");
+    }
+  } catch (err) {
+    log.market.warn(
+      `Failed to initialize Databento adapter: ${err instanceof Error ? err.message : "unknown"}`
+    );
+    // Keep mock adapter
+  }
 }
 
 // ─── Stream log (in-memory ring buffer) ──────────────────────
@@ -54,7 +86,10 @@ export async function getMarketSnapshot(
   instrument: Instrument = "NQ",
   timeframe: Timeframe = "5m"
 ): Promise<MarketSnapshot> {
-  // M8: Graceful degradation — quote is required, candles/health are best-effort
+  // Auto-detect adapter on first call
+  await ensureAdapter();
+
+  // Quote is required — candles/health are best-effort
   const rawQuote = await adapter.getQuote(instrument);
 
   let rawCandles: Awaited<ReturnType<typeof adapter.getCandles>> = [];
