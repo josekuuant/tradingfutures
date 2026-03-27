@@ -81,7 +81,15 @@ export async function PATCH(
 ) {
   try {
     const body = await req.json();
-    const action = body.action as string;
+    const action = body.action;
+    const VALID_ACTIONS = ["activate", "deactivate", "duplicate"] as const;
+
+    if (!action || !VALID_ACTIONS.includes(action)) {
+      return NextResponse.json(
+        { error: `Invalid action. Valid: ${VALID_ACTIONS.join(", ")}` },
+        { status: 400 }
+      );
+    }
 
     let result;
     switch (action) {
@@ -94,11 +102,6 @@ export async function PATCH(
       case "duplicate":
         result = await duplicateStrategy(params.id);
         break;
-      default:
-        return NextResponse.json(
-          { error: `Unknown action: ${action}` },
-          { status: 400 }
-        );
     }
 
     if (!result) {

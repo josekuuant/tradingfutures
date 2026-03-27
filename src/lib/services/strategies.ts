@@ -1,6 +1,8 @@
 import { db, schema } from "@/lib/db";
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
+import { pickDefined, safeJsonParse } from "@/lib/utils";
 import type { Strategy, CreateStrategyPayload, UpdateStrategyPayload } from "@/types/strategy";
+import type { Timeframe } from "@/types/market";
 
 // ─── Row ↔ Domain mapping ────────────────────────────────────
 
@@ -11,7 +13,7 @@ function toStrategy(row: schema.StrategyRow): Strategy {
     description: row.description,
     tag: row.tag,
     instrument: row.instrument as Strategy["instrument"],
-    timeframes: JSON.parse(row.timeframes),
+    timeframes: safeJsonParse<Timeframe[]>(row.timeframes, ["5m"]),
     contextConditions: row.contextConditions,
     entryConditions: row.entryConditions,
     invalidation: row.invalidation,
@@ -32,11 +34,12 @@ function toStrategy(row: schema.StrategyRow): Strategy {
 
 // ─── Service ─────────────────────────────────────────────────
 
-export async function listStrategies(): Promise<Strategy[]> {
+export async function listStrategies(limit = 100): Promise<Strategy[]> {
   const rows = await db
     .select()
     .from(schema.strategies)
-    .orderBy(schema.strategies.updatedAt);
+    .orderBy(desc(schema.strategies.updatedAt))
+    .limit(limit);
   return rows.map(toStrategy);
 }
 
@@ -90,29 +93,30 @@ export async function updateStrategy(
   if (!existing) return null;
 
   const now = new Date().toISOString();
-  const values: Record<string, unknown> = { updatedAt: now };
 
-  if (data.name !== undefined) values.name = data.name;
-  if (data.description !== undefined) values.description = data.description;
-  if (data.tag !== undefined) values.tag = data.tag;
-  if (data.instrument !== undefined) values.instrument = data.instrument;
-  if (data.timeframes !== undefined) values.timeframes = JSON.stringify(data.timeframes);
-  if (data.contextConditions !== undefined) values.contextConditions = data.contextConditions;
-  if (data.entryConditions !== undefined) values.entryConditions = data.entryConditions;
-  if (data.invalidation !== undefined) values.invalidation = data.invalidation;
-  if (data.tp1 !== undefined) values.tp1 = data.tp1;
-  if (data.tp2 !== undefined) values.tp2 = data.tp2;
-  if (data.minRR !== undefined) values.minRR = data.minRR;
-  if (data.volatilityFilter !== undefined) values.volatilityFilter = data.volatilityFilter;
-  if (data.volumeFilter !== undefined) values.volumeFilter = data.volumeFilter;
-  if (data.scheduleFilter !== undefined) values.scheduleFilter = data.scheduleFilter;
-  if (data.newsFilter !== undefined) values.newsFilter = data.newsFilter;
-  if (data.noTradeRules !== undefined) values.noTradeRules = data.noTradeRules;
-  if (data.promptTemplate !== undefined) values.promptTemplate = data.promptTemplate;
+  const values = pickDefined({
+    name: data.name,
+    description: data.description,
+    tag: data.tag,
+    instrument: data.instrument,
+    timeframes: data.timeframes ? JSON.stringify(data.timeframes) : undefined,
+    contextConditions: data.contextConditions,
+    entryConditions: data.entryConditions,
+    invalidation: data.invalidation,
+    tp1: data.tp1,
+    tp2: data.tp2,
+    minRR: data.minRR,
+    volatilityFilter: data.volatilityFilter,
+    volumeFilter: data.volumeFilter,
+    scheduleFilter: data.scheduleFilter,
+    newsFilter: data.newsFilter,
+    noTradeRules: data.noTradeRules,
+    promptTemplate: data.promptTemplate,
+  });
 
   await db
     .update(schema.strategies)
-    .set(values)
+    .set({ ...values, updatedAt: now })
     .where(eq(schema.strategies.id, id));
 
   return getStrategy(id);
@@ -152,29 +156,20 @@ export async function duplicateStrategy(sourceId: string): Promise<Strategy | nu
 
 export async function activateStrategy(id: string): Promise<Strategy | null> {
   const now = new Date().toISOString();
-
-  // Deactivate all
-  await db
-    .update(schema.strategies)
-    .set({ isActive: false, updatedAt: now });
-
-  // Activate the target
+  await db.update(schema.strategies).set({ isActive: false, updatedAt: now });
   await db
     .update(schema.strategies)
     .set({ isActive: true, updatedAt: now })
     .where(eq(schema.strategies.id, id));
-
   return getStrategy(id);
 }
 
 export async function deactivateStrategy(id: string): Promise<Strategy | null> {
   const now = new Date().toISOString();
-
   await db
     .update(schema.strategies)
     .set({ isActive: false, updatedAt: now })
     .where(eq(schema.strategies.id, id));
-
   return getStrategy(id);
 }
 

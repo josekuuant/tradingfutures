@@ -387,7 +387,9 @@ function dbRowToSignal(row: schema.SignalRow): Signal {
     strategyName: row.strategyName,
     promptId: row.promptId,
     promptName: row.promptName,
-    action: row.action as Signal["action"],
+    action: (["BUY", "SELL", "NO_TRADE"].includes(row.action)
+      ? row.action
+      : "NO_TRADE") as Signal["action"],
     confidence: row.confidence / 100,
     reasoning: row.reasoning,
     entryPrice: row.entryPrice ? Number(row.entryPrice) : null,

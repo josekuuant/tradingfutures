@@ -1,9 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
+import { z, ZodError } from "zod";
 import {
   listBacktestRuns,
   runBacktest,
 } from "@/lib/services/backtest/replay-engine";
-import type { BacktestConfig } from "@/types/backtest";
+
+const backtestConfigSchema = z
+  .object({
+    strategyId: z.string().min(1, "strategyId is required"),
+    promptId: z.string().min(1, "promptId is required"),
+    instrument: z.string().default("NQ"),
+    timeframe: z.string().default("5m"),
+    candleCount: z.coerce.number().int().min(50).max(2000).default(200),
+    windowSize: z.coerce.number().int().min(10).max(200).default(50),
+    stepSize: z.coerce.number().int().min(1).max(100).default(10),
+  })
+  .refine((d) => d.windowSize < d.candleCount, {
+    message: "windowSize must be less than candleCount",
+  });
 
 export async function GET() {
   try {
@@ -21,27 +35,16 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-
-    const config: BacktestConfig = {
-      strategyId: body.strategyId,
-      promptId: body.promptId,
-      instrument: body.instrument ?? "NQ",
-      timeframe: body.timeframe ?? "5m",
-      candleCount: body.candleCount ?? 200,
-      windowSize: body.windowSize ?? 50,
-      stepSize: body.stepSize ?? 10,
-    };
-
-    if (!config.strategyId || !config.promptId) {
-      return NextResponse.json(
-        { error: "strategyId and promptId are required" },
-        { status: 400 }
-      );
-    }
-
+    const config = backtestConfigSchema.parse(body);
     const run = await runBacktest(config);
     return NextResponse.json(run, { status: 201 });
   } catch (err) {
+    if (err instanceof ZodError) {
+      return NextResponse.json(
+        { error: "Validation failed", details: err.flatten().fieldErrors },
+        { status: 400 }
+      );
+    }
     const msg = err instanceof Error ? err.message : "Backtest failed";
     console.error("[API] POST /backtests error:", msg);
     return NextResponse.json({ error: msg }, { status: 500 });

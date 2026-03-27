@@ -19,16 +19,16 @@ export async function GET() {
 export async function PUT(req: NextRequest) {
   try {
     const body = await req.json();
-    const mode = body.mode as string;
+    const mode = body.mode;
 
-    if (!VALID_MODES.includes(mode as ExecutionMode)) {
+    if (!mode || !VALID_MODES.includes(mode)) {
       return NextResponse.json(
         { error: `Invalid mode. Valid: ${VALID_MODES.join(", ")}` },
         { status: 400 }
       );
     }
 
-    setExecutionMode(mode as ExecutionMode);
+    setExecutionMode(mode);
     return NextResponse.json({ mode: getExecutionMode() });
   } catch (err) {
     console.error("[API] PUT /execution/mode error:", err);

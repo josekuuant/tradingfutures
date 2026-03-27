@@ -1,9 +1,8 @@
 import { z } from "zod";
+import { INSTRUMENTS, TIMEFRAMES } from "@/types/market";
 
-// ─── Core enums ──────────────────────────────────────────────
-
-export const INSTRUMENTS = ["NQ", "MNQ"] as const;
-export const TIMEFRAMES = ["1m", "5m", "15m", "1h", "1D"] as const;
+// Re-export from market.ts (single source of truth)
+export { INSTRUMENTS, TIMEFRAMES };
 
 // ─── Strategy schema ─────────────────────────────────────────
 

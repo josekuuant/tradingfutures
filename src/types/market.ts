@@ -1,7 +1,10 @@
-// ─── Core Market Data Types ──────────────────────────────────
+// ─── Core Market Data Types (single source of truth) ─────────
 
-export type Instrument = "NQ" | "MNQ";
-export type Timeframe = "1m" | "5m" | "15m" | "1h" | "1D";
+export const INSTRUMENTS = ["NQ", "MNQ"] as const;
+export type Instrument = (typeof INSTRUMENTS)[number];
+
+export const TIMEFRAMES = ["1m", "5m", "15m", "1h", "1D"] as const;
+export type Timeframe = (typeof TIMEFRAMES)[number];
 export type FeedStatus = "live" | "delayed" | "stale" | "disconnected";
 
 // ─── Raw data (from provider) ────────────────────────────────

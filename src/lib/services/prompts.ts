@@ -1,5 +1,6 @@
 import { db, schema } from "@/lib/db";
 import { eq, desc } from "drizzle-orm";
+import { pickDefined } from "@/lib/utils";
 import type {
   Prompt,
   PromptVersion,
@@ -54,11 +55,12 @@ function toTestRun(row: schema.PromptTestRunRow): PromptTestRun {
 
 // ─── CRUD ────────────────────────────────────────────────────
 
-export async function listPrompts(): Promise<Prompt[]> {
+export async function listPrompts(limit = 100): Promise<Prompt[]> {
   const rows = await db
     .select()
     .from(schema.prompts)
-    .orderBy(desc(schema.prompts.updatedAt));
+    .orderBy(desc(schema.prompts.updatedAt))
+    .limit(limit);
   return rows.map(toPrompt);
 }
 
@@ -112,15 +114,19 @@ export async function updatePrompt(
 
   const newVersion = contentChanged ? existing.version + 1 : existing.version;
 
-  const values: Record<string, unknown> = { updatedAt: now };
-  if (data.name !== undefined) values.name = data.name;
-  if (data.description !== undefined) values.description = data.description;
-  if (data.tag !== undefined) values.tag = data.tag;
-  if (data.systemPrompt !== undefined) values.systemPrompt = data.systemPrompt;
-  if (data.userPromptTemplate !== undefined) values.userPromptTemplate = data.userPromptTemplate;
-  if (data.outputSchema !== undefined) values.outputSchema = data.outputSchema;
-  if (data.outputValidationRules !== undefined) values.outputValidationRules = data.outputValidationRules;
-  if (contentChanged) values.version = newVersion;
+  const values = {
+    ...pickDefined({
+      name: data.name,
+      description: data.description,
+      tag: data.tag,
+      systemPrompt: data.systemPrompt,
+      userPromptTemplate: data.userPromptTemplate,
+      outputSchema: data.outputSchema,
+      outputValidationRules: data.outputValidationRules,
+    }),
+    updatedAt: now,
+    ...(contentChanged ? { version: newVersion } : {}),
+  };
 
   await db
     .update(schema.prompts)

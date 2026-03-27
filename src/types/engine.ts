@@ -39,6 +39,19 @@ export interface EngineRunTrace {
 
 // ─── Engine config ───────────────────────────────────────────
 
+import { z } from "zod";
+
+export const engineConfigSchema = z.object({
+  cooldownSeconds: z.number().int().min(0).max(3600).optional(),
+  minVolatilityPoints: z.number().min(0).max(200).optional(),
+  levelProximityThreshold: z.number().min(0).max(0.1).optional(),
+  minRelativeVolume: z.number().min(0).max(10).optional(),
+  tradingHoursET: z.tuple([z.number().min(0).max(24), z.number().min(0).max(24)]).optional(),
+  maxConsecutiveSameSignal: z.number().int().min(1).max(50).optional(),
+});
+
+export type EngineConfigUpdate = z.infer<typeof engineConfigSchema>;
+
 export interface EngineConfig {
   /** Minimum seconds between Claude calls */
   cooldownSeconds: number;
