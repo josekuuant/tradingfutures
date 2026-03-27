@@ -141,7 +141,7 @@ describe("generateSignal", () => {
   });
 
   it("returns NO_PROMPT when no active prompt", async () => {
-    vi.mocked(getActiveStrategy).mockResolvedValue(mockStrategy as any);
+    vi.mocked(getActiveStrategy).mockResolvedValue(mockStrategy as never);
     vi.mocked(listPrompts).mockResolvedValue([]);
 
     const result = await generateSignal();
@@ -152,8 +152,8 @@ describe("generateSignal", () => {
   });
 
   it("returns MARKET_DATA_FAILED when snapshot throws", async () => {
-    vi.mocked(getActiveStrategy).mockResolvedValue(mockStrategy as any);
-    vi.mocked(listPrompts).mockResolvedValue([mockPrompt as any]);
+    vi.mocked(getActiveStrategy).mockResolvedValue(mockStrategy as never);
+    vi.mocked(listPrompts).mockResolvedValue([mockPrompt as never]);
     vi.mocked(getMarketSnapshot).mockRejectedValue(new Error("Databento down"));
 
     const result = await generateSignal();
@@ -181,8 +181,8 @@ describe("generateSignal", () => {
 
   it("returns MARKET_DATA_FAILED when data is stale", async () => {
     vi.mocked(checkRateLimit).mockReturnValue({ allowed: true, remaining: 29, resetInSeconds: 3600 });
-    vi.mocked(getActiveStrategy).mockResolvedValue(mockStrategy as any);
-    vi.mocked(listPrompts).mockResolvedValue([mockPrompt as any]);
+    vi.mocked(getActiveStrategy).mockResolvedValue(mockStrategy as never);
+    vi.mocked(listPrompts).mockResolvedValue([mockPrompt as never]);
 
     const staleSnapshot = {
       ...mockSnapshot,
@@ -191,7 +191,7 @@ describe("generateSignal", () => {
         timestamp: new Date(Date.now() - 300_000).toISOString(), // 5 min old
       },
     };
-    vi.mocked(getMarketSnapshot).mockResolvedValue(staleSnapshot as any);
+    vi.mocked(getMarketSnapshot).mockResolvedValue(staleSnapshot as never);
 
     const result = await generateSignal();
     expect(result.success).toBe(false);

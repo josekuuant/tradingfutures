@@ -83,9 +83,18 @@ export class TradovateAdapter implements ExecutionProviderAdapter {
     }
 
     const data = await res.json();
+    if (!data.accessToken) {
+      throw new Error(`Tradovate auth: no accessToken in response`);
+    }
+
+    // Use server-provided expiration if available, otherwise default 90min
+    const expiresAt = data.expirationTime
+      ? new Date(data.expirationTime).getTime()
+      : Date.now() + TOKEN_LIFETIME_MS;
+
     this.token = {
-      accessToken: data.accessToken ?? data["access_token"],
-      expiresAt: Date.now() + TOKEN_LIFETIME_MS,
+      accessToken: data.accessToken,
+      expiresAt,
       userId: data.userId ?? null,
     };
 
@@ -404,12 +413,15 @@ function reverseMapOrderType(tvType: string): OrderType {
 
 function mapTvStatus(tvStatus: string): OrderStatus {
   const map: Record<string, OrderStatus> = {
+    "Pending New": "pending",
     PendingNew: "pending",
     Working: "working",
     Filled: "filled",
     Cancelled: "cancelled",
+    Canceled: "cancelled", // both spellings
     Rejected: "rejected",
     Expired: "expired",
+    Suspended: "working", // contingent orders (OCO, OSO, GTC)
     PartiallyFilled: "partially_filled",
   };
   return map[tvStatus] ?? "pending";

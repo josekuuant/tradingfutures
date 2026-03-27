@@ -110,10 +110,11 @@ export class TopstepXAdapter implements ExecutionProviderAdapter {
     }
 
     const data = await res.json();
-    const sessionToken = data?.result?.sessionToken ?? data?.sessionToken;
+    // ProjectX returns { token: "jwt...", success: true } — NOT wrapped in {result:...}
+    const sessionToken = data?.token ?? data?.result?.token ?? data?.sessionToken;
 
     if (!sessionToken) {
-      throw new Error("TopstepX auth response missing sessionToken");
+      throw new Error(`TopstepX auth failed: ${data?.errorMessage ?? "no token in response"}`);
     }
 
     this.token = {
@@ -198,8 +199,11 @@ export class TopstepXAdapter implements ExecutionProviderAdapter {
         this.consecutiveFailures = 0;
         this.lastSuccessAt = new Date().toISOString();
 
-        // ProjectX wraps responses in { result: ... }
-        return (data?.result ?? data) as T;
+        // ProjectX returns flat responses with {success, errorCode, errorMessage, ...data}
+        if (data?.success === false) {
+          throw new Error(`TopstepX: ${data.errorMessage ?? `error code ${data.errorCode}`}`);
+        }
+        return data as T;
       } catch (err) {
         lastErr = err instanceof Error ? err : new Error(String(err));
         this.consecutiveFailures++;
@@ -232,7 +236,9 @@ export class TopstepXAdapter implements ExecutionProviderAdapter {
   }
 
   async getAccounts(): Promise<NormalizedAccount[]> {
-    const accounts = await this.apiFetch<PxAccount[]>("/api/Account/search");
+    // ProjectX returns { accounts: [...], success: true }
+    const data = await this.apiFetch<{ accounts: PxAccount[] }>("/api/Account/search");
+    const accounts = data.accounts ?? [];
 
     return accounts.map((a) => ({
       id: String(a.id),
@@ -251,9 +257,11 @@ export class TopstepXAdapter implements ExecutionProviderAdapter {
 
   async getPositions(accountId?: string): Promise<NormalizedPosition[]> {
     const params = accountId ? `?accountId=${accountId}` : "";
-    const positions = await this.apiFetch<PxPosition[]>(
+    // ProjectX returns { positions: [...], success: true }
+    const data = await this.apiFetch<{ positions: PxPosition[] }>(
       `/api/Position/searchOpen${params}`
     );
+    const positions = data.positions ?? [];
 
     return positions.map((p) => ({
       id: String(p.id),
@@ -263,19 +271,20 @@ export class TopstepXAdapter implements ExecutionProviderAdapter {
       side: p.size > 0 ? "long" as const : p.size < 0 ? "short" as const : "flat" as const,
       quantity: Math.abs(p.size),
       avgPrice: p.averagePrice ?? 0,
-      currentPrice: p.lastPrice ?? p.averagePrice ?? 0,
-      unrealizedPnl: p.unrealizedPnl ?? 0,
-      realizedPnl: p.realizedPnl ?? 0,
-      timestamp: p.timestamp ?? new Date().toISOString(),
+      currentPrice: p.averagePrice ?? 0,
+      unrealizedPnl: 0,
+      realizedPnl: 0,
+      timestamp: p.creationTimestamp ?? new Date().toISOString(),
     }));
   }
 
   async getOpenOrders(accountId?: string): Promise<NormalizedOrder[]> {
     const params = accountId ? `?accountId=${accountId}` : "";
-    const orders = await this.apiFetch<PxOrder[]>(
+    // ProjectX returns { orders: [...], success: true }
+    const data = await this.apiFetch<{ orders: PxOrder[] }>(
       `/api/Order/searchOpen${params}`
     );
-    return orders.map(mapPxOrder);
+    return (data.orders ?? []).map(mapPxOrder);
   }
 
   async placeOrder(
@@ -292,7 +301,7 @@ export class TopstepXAdapter implements ExecutionProviderAdapter {
       accountId: Number(accountId),
       contractId: request.instrument,
       type: mapPxOrderType(request.type),
-      side: request.side === "buy" ? 1 : 2,
+      side: request.side === "buy" ? 0 : 1, // ProjectX: 0=Buy, 1=Sell
       size: request.quantity,
       limitPrice: request.type === "limit" || request.type === "stop_limit"
         ? request.price
@@ -300,12 +309,15 @@ export class TopstepXAdapter implements ExecutionProviderAdapter {
       stopPrice: request.type === "stop" || request.type === "stop_limit"
         ? request.stopPrice
         : null,
+      trailPrice: null,
       customTag: request.idempotencyKey ?? null,
+      linkedOrderId: null,
     };
 
     log.execution.info(`TopstepX placeOrder: ${JSON.stringify(body)}`);
 
-    const result = await this.apiFetch<PxOrder>("/api/Order/place", {
+    // ProjectX returns { orderId: number, success: true }
+    const result = await this.apiFetch<{ orderId: number } & PxOrder>("/api/Order/place", {
       method: "POST",
       body: JSON.stringify(body),
     });
@@ -388,29 +400,28 @@ interface PxPosition {
   id: number;
   accountId: number;
   contractId?: string;
+  type?: number;
   size: number;
   averagePrice?: number;
-  lastPrice?: number;
-  unrealizedPnl?: number;
-  realizedPnl?: number;
-  timestamp?: string;
+  creationTimestamp?: string;
 }
 
 interface PxOrder {
   id: number;
   accountId: number;
   contractId?: string;
+  symbolId?: string;
   type: number;
   side: number;
   size: number;
   limitPrice?: number | null;
   stopPrice?: number | null;
-  filledSize?: number;
-  averageFillPrice?: number | null;
+  fillVolume?: number;     // ProjectX uses fillVolume, not filledSize
+  filledPrice?: number;    // ProjectX uses filledPrice, not averageFillPrice
   status: number;
   customTag?: string | null;
-  createdAt?: string;
-  modifiedAt?: string;
+  creationTimestamp?: string;
+  updateTimestamp?: string;
 }
 
 function mapPxOrder(o: PxOrder): NormalizedOrder {
@@ -421,50 +432,51 @@ function mapPxOrder(o: PxOrder): NormalizedOrder {
     idempotencyKey: o.customTag ?? String(o.id),
     accountId: String(o.accountId),
     instrument: o.contractId ?? "NQ",
-    side: o.side === 1 ? "buy" : "sell",
+    side: o.side === 0 ? "buy" : "sell", // ProjectX: 0=Buy, 1=Sell
     type: reversePxOrderType(o.type),
     quantity: o.size,
     price: o.limitPrice ?? null,
     stopPrice: o.stopPrice ?? null,
-    filledQuantity: o.filledSize ?? 0,
-    avgFillPrice: o.averageFillPrice ?? null,
+    filledQuantity: o.fillVolume ?? 0,
+    avgFillPrice: o.filledPrice ?? null,
     status: mapPxStatus(o.status),
-    createdAt: o.createdAt ?? new Date().toISOString(),
-    updatedAt: o.modifiedAt ?? new Date().toISOString(),
+    createdAt: o.creationTimestamp ?? new Date().toISOString(),
+    updatedAt: o.updateTimestamp ?? new Date().toISOString(),
   };
 }
 
-// ProjectX order types: 1=Market, 2=Limit, 3=Stop, 4=StopLimit
+// ProjectX order types: 1=Limit, 2=Market, 3=StopLimit, 4=Stop, 5=TrailingStop
 function mapPxOrderType(type: string): number {
   const map: Record<string, number> = {
-    market: 1,
-    limit: 2,
-    stop: 3,
-    stop_limit: 4,
+    market: 2,
+    limit: 1,
+    stop: 4,
+    stop_limit: 3,
   };
-  return map[type] ?? 1;
+  return map[type] ?? 2;
 }
 
 function reversePxOrderType(pxType: number): NormalizedOrder["type"] {
+  // ProjectX: 1=Limit, 2=Market, 3=StopLimit, 4=Stop
   const map: Record<number, NormalizedOrder["type"]> = {
-    1: "market",
-    2: "limit",
-    3: "stop",
-    4: "stop_limit",
+    1: "limit",
+    2: "market",
+    3: "stop_limit",
+    4: "stop",
   };
   return map[pxType] ?? "market";
 }
 
-// ProjectX order statuses (numeric)
+// ProjectX order statuses: 0=None, 1=Open, 2=Filled, 3=Cancelled, 4=Expired, 5=Rejected, 6=Pending
 function mapPxStatus(pxStatus: number): OrderStatus {
   const map: Record<number, OrderStatus> = {
     0: "pending",
     1: "working",
     2: "filled",
     3: "cancelled",
-    4: "rejected",
-    5: "expired",
-    6: "partially_filled",
+    4: "expired",
+    5: "rejected",
+    6: "pending",
   };
   return map[pxStatus] ?? "pending";
 }
