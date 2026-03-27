@@ -85,9 +85,14 @@ export interface Signal {
   entryPrice: number | null;
   stopLoss: number | null;
   takeProfit: number | null;
+  takeProfit2: number | null;
   riskRewardRatio: number | null;
   invalidation: string;
   marketContext: string;
+  marketState: string;
+  bias: string;
+  setupType: string;
+  warning: string;
   instrument: string;
   timeframe: string;
   currentPrice: number;

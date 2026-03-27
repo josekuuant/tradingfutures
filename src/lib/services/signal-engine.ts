@@ -261,9 +261,14 @@ export async function generateSignal(
       entryPrice: null,
       stopLoss: null,
       takeProfit: null,
+      takeProfit2: null,
       riskRewardRatio: null,
       invalidation: "",
       marketContext: "",
+      marketState: "",
+      bias: "",
+      setupType: "",
+      warning: "",
       instrument,
       timeframe,
       currentPrice: snapshot.quote.lastPrice,
@@ -307,6 +312,11 @@ export async function generateSignal(
     riskRewardRatio: data.risk_reward_ratio,
     invalidation: data.invalidation ?? "",
     marketContext: data.market_context ?? "",
+    marketState: data.market_state ?? "",
+    bias: data.bias ?? "",
+    setupType: data.setup_type ?? "",
+    takeProfit2: data.take_profit_2 ?? null,
+    warning: data.warning ?? "",
     instrument,
     timeframe,
     currentPrice: snapshot.quote.lastPrice,
@@ -360,9 +370,14 @@ interface SignalInsert {
   entryPrice: number | null;
   stopLoss: number | null;
   takeProfit: number | null;
+  takeProfit2: number | null;
   riskRewardRatio: number | null;
   invalidation: string;
   marketContext: string;
+  marketState: string;
+  bias: string;
+  setupType: string;
+  warning: string;
   instrument: string;
   timeframe: string;
   currentPrice: number;
@@ -389,10 +404,15 @@ async function saveSignalToDb(data: SignalInsert): Promise<Signal> {
     entryPrice: data.entryPrice != null ? String(data.entryPrice) : null,
     stopLoss: data.stopLoss != null ? String(data.stopLoss) : null,
     takeProfit: data.takeProfit != null ? String(data.takeProfit) : null,
+    takeProfit2: data.takeProfit2 != null ? String(data.takeProfit2) : null,
     riskRewardRatio:
       data.riskRewardRatio != null ? String(data.riskRewardRatio) : null,
     invalidation: data.invalidation,
     marketContext: data.marketContext,
+    marketState: data.marketState,
+    bias: data.bias,
+    setupType: data.setupType,
+    warning: data.warning,
     instrument: data.instrument,
     timeframe: data.timeframe,
     currentPrice: String(data.currentPrice),
@@ -416,9 +436,14 @@ async function saveSignalToDb(data: SignalInsert): Promise<Signal> {
     entryPrice: data.entryPrice,
     stopLoss: data.stopLoss,
     takeProfit: data.takeProfit,
+    takeProfit2: data.takeProfit2,
     riskRewardRatio: data.riskRewardRatio,
     invalidation: data.invalidation,
     marketContext: data.marketContext,
+    marketState: data.marketState,
+    bias: data.bias,
+    setupType: data.setupType,
+    warning: data.warning,
     instrument: data.instrument,
     timeframe: data.timeframe,
     currentPrice: data.currentPrice,
@@ -448,9 +473,14 @@ function dbRowToSignal(row: schema.SignalRow): Signal {
     entryPrice: row.entryPrice ? Number(row.entryPrice) : null,
     stopLoss: row.stopLoss ? Number(row.stopLoss) : null,
     takeProfit: row.takeProfit ? Number(row.takeProfit) : null,
+    takeProfit2: row.takeProfit2 ? Number(row.takeProfit2) : null,
     riskRewardRatio: row.riskRewardRatio ? Number(row.riskRewardRatio) : null,
     invalidation: row.invalidation,
     marketContext: row.marketContext,
+    marketState: row.marketState,
+    bias: row.bias,
+    setupType: row.setupType,
+    warning: row.warning,
     instrument: row.instrument,
     timeframe: row.timeframe,
     currentPrice: Number(row.currentPrice),
