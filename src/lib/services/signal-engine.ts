@@ -1,5 +1,6 @@
 import { db, schema } from "@/lib/db";
 import { desc, eq } from "drizzle-orm";
+import { log } from "@/lib/logger";
 import { getActiveStrategy } from "./strategies";
 import { getMarketSnapshot } from "./market";
 import { listPrompts } from "./prompts";
@@ -86,7 +87,7 @@ export async function generateSignal(
     snapshot = await getMarketSnapshot(instrument, timeframe);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
-    console.error("[Engine] Market data failed:", msg);
+    log.engine.error(`Market data failed: ${msg}`);
     pushTrace({
       outcome: "error",
       instrument,
@@ -122,7 +123,7 @@ export async function generateSignal(
       .map((r) => `${r.filter}: ${r.reason}`)
       .join("; ");
 
-    console.log(`[Engine] Filtered out: ${skippedFilters}`);
+    log.engine.info(`Filtered out: ${skippedFilters}`);
 
     pushTrace({
       outcome: "filtered_out",
@@ -142,9 +143,10 @@ export async function generateSignal(
   // 6. Assemble prompt
   const assembled = assemblePrompt(activePrompt, strategy, snapshot);
 
-  console.log(
-    `[Engine] Calling Claude for ${instrument} ${timeframe} | strategy="${strategy.name}" | prompt="${activePrompt.name}"`
-  );
+  log.engine.info(`Calling Claude for ${instrument} ${timeframe}`, {
+    strategy: strategy.name,
+    prompt: activePrompt.name,
+  });
 
   // 7. Call Claude
   let claudeResponse;
@@ -161,7 +163,7 @@ export async function generateSignal(
         TIMEOUT: "CLAUDE_TIMEOUT",
       };
       const code = codeMap[err.code] ?? "CLAUDE_API_ERROR";
-      console.error(`[Engine] Claude error (${err.code}): ${err.message}`);
+      log.claude.error(`Claude error (${err.code}): ${err.message}`);
       pushTrace({
         outcome: "error",
         instrument,
@@ -176,7 +178,7 @@ export async function generateSignal(
       return fail(code, err.message);
     }
     const msg = err instanceof Error ? err.message : "Unknown Claude error";
-    console.error("[Engine] Claude error:", msg);
+    log.claude.error(`Claude error: ${msg}`);
     pushTrace({
       outcome: "error",
       instrument,
@@ -195,7 +197,7 @@ export async function generateSignal(
   const parseResult = parseClaudeResponse(claudeResponse.content);
 
   if (!parseResult.success) {
-    console.error("[Engine] Parse error:", parseResult.error);
+    log.engine.error(`Parse error: ${parseResult.error}`);
 
     // Save failed attempt for audit
     await saveSignalToDb({
@@ -265,9 +267,13 @@ export async function generateSignal(
     durationMs: totalDuration,
   });
 
-  console.log(
-    `[Engine] Signal: ${data.action} (${Math.round(data.confidence * 100)}%) in ${totalDuration}ms`
-  );
+  log.engine.info(`Signal: ${data.action} (${Math.round(data.confidence * 100)}%) in ${totalDuration}ms`, {
+    action: data.action,
+    confidence: data.confidence,
+    instrument,
+    timeframe,
+    durationMs: totalDuration,
+  });
 
   pushTrace({
     outcome: "signal_generated",

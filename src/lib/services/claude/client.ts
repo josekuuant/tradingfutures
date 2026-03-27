@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { getRawCredentials } from "@/lib/services/connections";
+import { log } from "@/lib/logger";
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -44,7 +45,7 @@ export async function callClaude(
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (attempt > 0) {
-      console.log(`[Claude] Retry ${attempt}/${MAX_RETRIES}...`);
+      log.claude.warn(`Retry ${attempt}/${MAX_RETRIES}`);
       await sleep(RETRY_DELAY_MS * attempt);
     }
 
@@ -80,9 +81,11 @@ export async function callClaude(
         );
       }
 
-      console.log(
-        `[Claude] ${model} responded in ${durationMs}ms (${response.usage.input_tokens}+${response.usage.output_tokens} tokens)`
-      );
+      log.claude.info(`${model} responded in ${durationMs}ms`, {
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+        durationMs,
+      });
 
       return {
         content: textBlock.text,
