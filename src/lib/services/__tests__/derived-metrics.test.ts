@@ -24,7 +24,8 @@ function todayAt(hour: number, minute = 0): string {
   return d.toISOString();
 }
 
-function yesterdayAt(hour: number, minute = 0): string {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function _yesterdayAt(hour: number, minute = 0): string {
   const d = new Date();
   d.setDate(d.getDate() - 1);
   d.setHours(hour, minute, 0, 0);

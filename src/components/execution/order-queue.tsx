@@ -191,6 +191,7 @@ function PendingOrderRow({
                 }}
                 className="inline-flex items-center gap-1 rounded bg-success/10 px-2.5 py-1.5 text-[10px] font-medium text-success hover:bg-success/20"
                 title="Approve & Execute"
+                aria-label="Approve and execute order"
               >
                 <PlayCircle className="h-3 w-3" />
                 Execute
@@ -199,6 +200,7 @@ function PendingOrderRow({
                 onClick={() => onAction(order.id, "approve")}
                 className="rounded bg-primary/10 p-1.5 text-primary hover:bg-primary/20"
                 title="Approve (don't execute yet)"
+                aria-label="Approve order"
               >
                 <Check className="h-3.5 w-3.5" />
               </button>
@@ -206,6 +208,7 @@ function PendingOrderRow({
                 onClick={() => onAction(order.id, "reject", "Manual rejection")}
                 className="rounded bg-danger/10 p-1.5 text-danger hover:bg-danger/20"
                 title="Reject"
+                aria-label="Reject order"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -213,6 +216,7 @@ function PendingOrderRow({
                 onClick={() => onAction(order.id, "cancel")}
                 className="rounded bg-muted p-1.5 text-muted-foreground hover:bg-accent"
                 title="Cancel"
+                aria-label="Cancel order"
               >
                 <Ban className="h-3 w-3" />
               </button>

@@ -171,7 +171,8 @@ export function RiskPanel({ status, onAction }: RiskPanelProps) {
                     })
                   }
                   className="ml-2 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                  title="Release"
+                  title="Release kill switch"
+                  aria-label="Release kill switch"
                 >
                   <ShieldOff className="h-3.5 w-3.5" />
                 </button>

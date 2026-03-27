@@ -48,7 +48,8 @@ describe("normalizeQuote", () => {
   });
 
   it("ensures volume is non-negative", () => {
-    const q = normalizeQuote(makeRawQuote({ volume: -1000 } as any), "NQ");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const q = normalizeQuote(makeRawQuote({ volume: -1000 } as unknown as RawQuote), "NQ");
     expect(q.volume).toBe(0);
   });
 });

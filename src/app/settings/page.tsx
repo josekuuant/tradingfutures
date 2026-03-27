@@ -78,6 +78,13 @@ export default function SettingsPage() {
         </div>
       </div>
 
+      {error && (
+        <div className="rounded-md bg-danger/10 px-4 py-3 text-sm text-danger">
+          {error}
+          <button onClick={fetchData} className="ml-2 underline">Retry</button>
+        </div>
+      )}
+
       {loading ? (
         <div className="flex h-48 items-center justify-center">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />

@@ -308,6 +308,7 @@ export function ConnectionForm({
                     <button
                       type="button"
                       onClick={() => toggleReveal(field.key)}
+                      aria-label={isRevealed ? "Hide password" : "Show password"}
                       className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-muted-foreground hover:text-foreground"
                     >
                       {isRevealed ? (

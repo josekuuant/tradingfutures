@@ -187,6 +187,7 @@ function ActionButton({
   return (
     <button
       title={title}
+      aria-label={title}
       onClick={onClick}
       className={cn(
         "rounded p-1.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
