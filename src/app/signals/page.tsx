@@ -22,15 +22,18 @@ const DEFAULT_FILTERS: SignalFilters = {
 export default function SignalsPage() {
   const [signals, setSignals] = useState<Signal[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<SignalFilters>(DEFAULT_FILTERS);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const fetchSignals = useCallback(async () => {
     try {
+      setError(null);
       const res = await fetch("/api/signals");
       if (res.ok) setSignals(await res.json());
-    } catch (err) {
-      console.error("Failed to fetch signals:", err);
+      else setError("Failed to load signals");
+    } catch {
+      setError("Connection error — could not load signals");
     } finally {
       setLoading(false);
     }
@@ -102,6 +105,14 @@ export default function SignalsPage() {
 
       {/* Stats */}
       <SignalStats signals={filtered} />
+
+      {/* Error state */}
+      {error && (
+        <div className="rounded-md bg-danger/10 px-4 py-3 text-sm text-danger">
+          {error}
+          <button onClick={fetchSignals} className="ml-2 underline">Retry</button>
+        </div>
+      )}
 
       {/* Filters */}
       <SignalFiltersBar

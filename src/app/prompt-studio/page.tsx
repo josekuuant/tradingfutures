@@ -7,6 +7,8 @@ import { PromptCard } from "@/components/prompt-studio/prompt-card";
 import { PromptEditor } from "@/components/prompt-studio/prompt-editor";
 import { VersionPanel } from "@/components/prompt-studio/version-panel";
 import { TestPanel } from "@/components/prompt-studio/test-panel";
+import { ToastContainer } from "@/components/ui/toast-container";
+import { useToast } from "@/hooks/use-toast";
 
 type ModalState =
   | { type: "none" }
@@ -17,14 +19,18 @@ type ModalState =
 export default function PromptStudioPage() {
   const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [modal, setModal] = useState<ModalState>({ type: "none" });
+  const { toasts, show, dismiss } = useToast();
 
   const fetchPrompts = useCallback(async () => {
     try {
+      setError(null);
       const res = await fetch("/api/prompts");
       if (res.ok) setPrompts(await res.json());
-    } catch (err) {
-      console.error("Failed to fetch prompts:", err);
+      else setError("Failed to load prompts");
+    } catch {
+      setError("Connection error — could not load prompts");
     } finally {
       setLoading(false);
     }
@@ -37,48 +43,77 @@ export default function PromptStudioPage() {
   const findPrompt = (id: string) => prompts.find((p) => p.id === id) ?? null;
 
   const handleSave = async (data: PromptFormData) => {
-    const editing = modal.type === "editor" ? modal.prompt : null;
-    if (editing) {
-      const res = await fetch(`/api/prompts/${editing.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error("Update failed");
-    } else {
-      const res = await fetch("/api/prompts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error("Create failed");
+    try {
+      const editing = modal.type === "editor" ? modal.prompt : null;
+      if (editing) {
+        const res = await fetch(`/api/prompts/${editing.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        });
+        if (!res.ok) throw new Error("Update failed");
+        show("success", "Prompt updated");
+      } else {
+        const res = await fetch("/api/prompts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        });
+        if (!res.ok) throw new Error("Create failed");
+        show("success", "Prompt created");
+      }
+      setModal({ type: "none" });
+      await fetchPrompts();
+    } catch (err) {
+      show("error", err instanceof Error ? err.message : "Failed to save prompt");
     }
-    setModal({ type: "none" });
-    await fetchPrompts();
   };
 
   const handleAction = async (id: string, action: string) => {
-    await fetch(`/api/prompts/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action }),
-    });
-    await fetchPrompts();
+    try {
+      const res = await fetch(`/api/prompts/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      if (!res.ok) throw new Error(`${action} failed`);
+      show("success", `Prompt ${action}d`);
+      await fetchPrompts();
+    } catch (err) {
+      show("error", err instanceof Error ? err.message : "Action failed");
+    }
   };
 
   const handleDelete = async (id: string) => {
-    await fetch(`/api/prompts/${id}`, { method: "DELETE" });
-    await fetchPrompts();
+    const prompt = prompts.find((p) => p.id === id);
+    if (!window.confirm(`Delete "${prompt?.name ?? "this prompt"}"? All versions and test runs will be lost.`)) {
+      return;
+    }
+    try {
+      await fetch(`/api/prompts/${id}`, { method: "DELETE" });
+      show("success", "Prompt deleted");
+      await fetchPrompts();
+    } catch {
+      show("error", "Failed to delete prompt");
+    }
   };
 
   const handleRestore = async (promptId: string, versionId: string) => {
-    await fetch(`/api/prompts/${promptId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "restore", versionId }),
-    });
-    setModal({ type: "none" });
-    await fetchPrompts();
+    if (!window.confirm("Restore this version? Current prompt content will be overwritten.")) {
+      return;
+    }
+    try {
+      await fetch(`/api/prompts/${promptId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "restore", versionId }),
+      });
+      show("success", "Version restored");
+      setModal({ type: "none" });
+      await fetchPrompts();
+    } catch {
+      show("error", "Failed to restore version");
+    }
   };
 
   const activePrompt = prompts.find((p) => p.isActive);
@@ -109,12 +144,20 @@ export default function PromptStudioPage() {
         </button>
       </div>
 
+      {/* Error state */}
+      {error && (
+        <div className="rounded-md bg-danger/10 px-4 py-3 text-sm text-danger">
+          {error}
+          <button onClick={fetchPrompts} className="ml-2 underline">Retry</button>
+        </div>
+      )}
+
       {/* Prompt list */}
       {loading ? (
         <div className="flex h-48 items-center justify-center">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
-      ) : prompts.length === 0 ? (
+      ) : prompts.length === 0 && !error ? (
         <div className="flex h-48 flex-col items-center justify-center rounded-lg border border-dashed border-border">
           <p className="text-sm text-muted-foreground">No prompts yet</p>
           <button
@@ -164,6 +207,8 @@ export default function PromptStudioPage() {
           onClose={() => setModal({ type: "none" })}
         />
       )}
+
+      <ToastContainer toasts={toasts} onDismiss={dismiss} />
     </div>
   );
 }

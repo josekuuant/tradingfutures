@@ -10,20 +10,24 @@ export default function SettingsPage() {
   const [health, setHealth] = useState<{ uptime: string; status: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"success" | "error" | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
+      setError(null);
       const [configRes, healthRes] = await Promise.all([
         fetch("/api/engine/config"),
         fetch("/api/health"),
       ]);
       if (configRes.ok) setConfig(await configRes.json());
+      else setError("Failed to load config");
       if (healthRes.ok) {
         const h = await healthRes.json();
         setHealth({ uptime: h.uptime, status: h.status });
       }
-    } catch (err) {
-      console.error("Failed to fetch settings:", err);
+    } catch {
+      setError("Connection error — could not load settings");
     } finally {
       setLoading(false);
     }
@@ -36,14 +40,21 @@ export default function SettingsPage() {
   const handleSave = async () => {
     if (!config) return;
     setSaving(true);
+    setSaveStatus(null);
     try {
-      await fetch("/api/engine/config", {
+      const res = await fetch("/api/engine/config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(config),
       });
-    } catch (err) {
-      console.error("Failed to save:", err);
+      if (res.ok) {
+        setSaveStatus("success");
+        setTimeout(() => setSaveStatus(null), 3000);
+      } else {
+        setSaveStatus("error");
+      }
+    } catch {
+      setSaveStatus("error");
     } finally {
       setSaving(false);
     }
@@ -107,13 +118,21 @@ export default function SettingsPage() {
                 <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   Engine Configuration
                 </p>
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                >
-                  {saving ? "Saving..." : "Save Changes"}
-                </button>
+                <div className="flex items-center gap-3">
+                  {saveStatus === "success" && (
+                    <span className="text-xs text-success">Saved</span>
+                  )}
+                  {saveStatus === "error" && (
+                    <span className="text-xs text-danger">Save failed</span>
+                  )}
+                  <button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    {saving ? "Saving..." : "Save Changes"}
+                  </button>
+                </div>
               </div>
 
               <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

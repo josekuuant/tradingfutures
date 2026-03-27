@@ -22,6 +22,7 @@ export default function BacktestsPage() {
   const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [runError, setRunError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // Form state
@@ -78,10 +79,13 @@ export default function BacktestsPage() {
       if (res.ok) {
         const run: BacktestRun = await res.json();
         setExpandedId(run.id);
+      } else {
+        const data = await res.json().catch(() => ({ error: "Backtest failed" }));
+        setRunError(data.error ?? "Backtest failed");
       }
       await fetchData();
     } catch (err) {
-      console.error("Backtest failed:", err);
+      setRunError(err instanceof Error ? err.message : "Backtest failed");
     } finally {
       setRunning(false);
     }
@@ -206,6 +210,14 @@ export default function BacktestsPage() {
           </button>
         </div>
       </div>
+
+      {/* Error display */}
+      {runError && (
+        <div className="rounded-md bg-danger/10 px-4 py-3 text-sm text-danger">
+          {runError}
+          <button onClick={() => setRunError(null)} className="ml-2 underline">Dismiss</button>
+        </div>
+      )}
 
       {/* Runs list */}
       {loading ? (

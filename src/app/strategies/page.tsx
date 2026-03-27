@@ -5,22 +5,28 @@ import { Target, Plus, Loader2 } from "lucide-react";
 import type { Strategy, StrategyFormData } from "@/types/strategy";
 import { StrategyCard } from "@/components/strategies/strategy-card";
 import { StrategyEditor } from "@/components/strategies/strategy-editor";
+import { ToastContainer } from "@/components/ui/toast-container";
+import { useToast } from "@/hooks/use-toast";
 
 export default function StrategiesPage() {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingStrategy, setEditingStrategy] = useState<Strategy | null>(null);
+  const { toasts, show, dismiss } = useToast();
 
   const fetchStrategies = useCallback(async () => {
     try {
+      setError(null);
       const res = await fetch("/api/strategies");
       if (res.ok) {
-        const data = await res.json();
-        setStrategies(data);
+        setStrategies(await res.json());
+      } else {
+        setError("Failed to load strategies");
       }
-    } catch (err) {
-      console.error("Failed to fetch strategies:", err);
+    } catch {
+      setError("Connection error — could not load strategies");
     } finally {
       setLoading(false);
     }
@@ -35,7 +41,7 @@ export default function StrategiesPage() {
     setEditorOpen(true);
   };
 
-  const openEdit = async (id: string) => {
+  const openEdit = (id: string) => {
     const s = strategies.find((s) => s.id === id);
     if (s) {
       setEditingStrategy(s);
@@ -44,48 +50,69 @@ export default function StrategiesPage() {
   };
 
   const handleSave = async (data: StrategyFormData) => {
-    if (editingStrategy) {
-      const res = await fetch(`/api/strategies/${editingStrategy.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error("Update failed");
-    } else {
-      const res = await fetch("/api/strategies", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error("Create failed");
+    try {
+      if (editingStrategy) {
+        const res = await fetch(`/api/strategies/${editingStrategy.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        });
+        if (!res.ok) throw new Error("Update failed");
+        show("success", "Strategy updated");
+      } else {
+        const res = await fetch("/api/strategies", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        });
+        if (!res.ok) throw new Error("Create failed");
+        show("success", "Strategy created");
+      }
+      setEditorOpen(false);
+      setEditingStrategy(null);
+      await fetchStrategies();
+    } catch (err) {
+      show("error", err instanceof Error ? err.message : "Failed to save strategy");
     }
-    setEditorOpen(false);
-    setEditingStrategy(null);
-    await fetchStrategies();
   };
 
   const handleAction = async (
     id: string,
     action: "activate" | "deactivate" | "duplicate"
   ) => {
-    await fetch(`/api/strategies/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action }),
-    });
-    await fetchStrategies();
+    try {
+      const res = await fetch(`/api/strategies/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      if (!res.ok) throw new Error(`${action} failed`);
+      show("success", `Strategy ${action}d`);
+      await fetchStrategies();
+    } catch (err) {
+      show("error", err instanceof Error ? err.message : "Action failed");
+    }
   };
 
   const handleDelete = async (id: string) => {
-    await fetch(`/api/strategies/${id}`, { method: "DELETE" });
-    await fetchStrategies();
+    const strategy = strategies.find((s) => s.id === id);
+    if (!window.confirm(`Delete "${strategy?.name ?? "this strategy"}"? This cannot be undone.`)) {
+      return;
+    }
+    try {
+      await fetch(`/api/strategies/${id}`, { method: "DELETE" });
+      show("success", "Strategy deleted");
+      await fetchStrategies();
+    } catch {
+      show("error", "Failed to delete strategy");
+    }
   };
 
   const activeStrategy = strategies.find((s) => s.isActive);
 
   return (
     <div className="space-y-6">
-      {/* ── Header ──────────────────────────────────────────── */}
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
@@ -110,12 +137,22 @@ export default function StrategiesPage() {
         </button>
       </div>
 
-      {/* ── Strategy list ───────────────────────────────────── */}
+      {/* Error state */}
+      {error && (
+        <div className="rounded-md bg-danger/10 px-4 py-3 text-sm text-danger">
+          {error}
+          <button onClick={fetchStrategies} className="ml-2 underline">
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* Strategy list */}
       {loading ? (
         <div className="flex h-48 items-center justify-center">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
-      ) : strategies.length === 0 ? (
+      ) : strategies.length === 0 && !error ? (
         <div className="flex h-48 flex-col items-center justify-center rounded-lg border border-dashed border-border">
           <p className="text-sm text-muted-foreground">No strategies yet</p>
           <button
@@ -141,7 +178,6 @@ export default function StrategiesPage() {
         </div>
       )}
 
-      {/* ── Editor modal ────────────────────────────────────── */}
       {editorOpen && (
         <StrategyEditor
           strategy={editingStrategy}
@@ -152,6 +188,8 @@ export default function StrategiesPage() {
           }}
         />
       )}
+
+      <ToastContainer toasts={toasts} onDismiss={dismiss} />
     </div>
   );
 }

@@ -16,13 +16,16 @@ const CATEGORIES: ProviderCategory[] = ["data", "ai", "execution"];
 export default function ConnectionsPage() {
   const [connections, setConnections] = useState<ConnectionResponse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchConnections = useCallback(async () => {
     try {
+      setError(null);
       const res = await fetch("/api/connections");
       if (res.ok) setConnections(await res.json());
-    } catch (err) {
-      console.error("Failed to fetch connections:", err);
+      else setError("Failed to load connections");
+    } catch {
+      setError("Connection error — could not load API configurations");
     } finally {
       setLoading(false);
     }
@@ -42,6 +45,14 @@ export default function ConnectionsPage() {
 
   return (
     <div className="space-y-6">
+      {/* Error state */}
+      {error && (
+        <div className="rounded-md bg-danger/10 px-4 py-3 text-sm text-danger">
+          {error}
+          <button onClick={fetchConnections} className="ml-2 underline">Retry</button>
+        </div>
+      )}
+
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">

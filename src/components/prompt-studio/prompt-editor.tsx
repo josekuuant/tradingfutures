@@ -102,7 +102,7 @@ export function PromptEditor({ prompt, onSave, onClose }: PromptEditorProps) {
     "w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/40 focus:border-primary focus:ring-1 focus:ring-primary";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-background/80 backdrop-blur-sm p-6">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-background/80 backdrop-blur-sm p-6" role="dialog" aria-modal="true" aria-label={isEdit ? "Edit Prompt" : "New Prompt"}>
       <div className="w-full max-w-3xl rounded-lg border border-border bg-card shadow-xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
