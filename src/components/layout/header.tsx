@@ -14,7 +14,7 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-background/80 px-6 backdrop-blur-sm">
-      <h1 className="text-sm font-semibold">{currentPage}</h1>
+      <h1 className="text-sm font-semibold pl-10 lg:pl-0">{currentPage}</h1>
       <StatusBar />
     </header>
   );

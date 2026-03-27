@@ -23,6 +23,9 @@ import type {
 } from "@/types/signal";
 import type { Instrument, Timeframe } from "@/types/market";
 import { DEFAULT_ENGINE_CONFIG, type EngineConfig } from "@/types/engine";
+import { checkRateLimit, recordEvent } from "@/lib/rate-limiter";
+
+const MAX_SIGNALS_PER_HOUR = 30;
 
 // ─── Engine state ────────────────────────────────────────────
 
@@ -42,6 +45,18 @@ export async function generateSignal(
   input: SignalEngineInput = {}
 ): Promise<SignalEngineResult> {
   const startTime = Date.now();
+
+  // 0. Rate limit check
+  const rateCheck = checkRateLimit("signal-generation", MAX_SIGNALS_PER_HOUR);
+  if (!rateCheck.allowed) {
+    log.engine.warn(
+      `Rate limit reached: ${MAX_SIGNALS_PER_HOUR}/hr. Reset in ${rateCheck.resetInSeconds}s`
+    );
+    return fail(
+      "FILTERED",
+      `Rate limit: max ${MAX_SIGNALS_PER_HOUR} signals/hour. Try again in ${rateCheck.resetInSeconds}s.`
+    );
+  }
 
   // 1. Get active strategy
   const strategy = await getActiveStrategy();
@@ -321,6 +336,9 @@ export async function generateSignal(
     error: null,
     durationMs: totalDuration,
   });
+
+  // Record successful generation for rate limiting
+  recordEvent("signal-generation");
 
   return { success: true, signal };
 }

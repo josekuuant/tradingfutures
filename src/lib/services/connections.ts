@@ -1,5 +1,6 @@
 import { db, schema } from "@/lib/db";
 import { eq } from "drizzle-orm";
+import { encrypt, decrypt, isEncrypted } from "@/lib/crypto";
 import {
   type Provider,
   type ConnectionResponse,
@@ -33,9 +34,18 @@ function maskCredentials(
   return masked;
 }
 
+/** Read credentials from DB, decrypting if needed */
+function readCredentials(raw: string): Record<string, unknown> {
+  if (isEncrypted(raw)) {
+    return JSON.parse(decrypt(raw));
+  }
+  // Legacy: unencrypted JSON (will be encrypted on next save)
+  return JSON.parse(raw);
+}
+
 /** Map DB row to API response (never exposes raw credentials) */
 function toResponse(row: schema.ApiConnection): ConnectionResponse {
-  const creds = JSON.parse(row.credentials) as Record<string, unknown>;
+  const creds = readCredentials(row.credentials);
   return {
     id: row.id,
     provider: row.provider,
@@ -75,7 +85,9 @@ export async function upsertConnection(
   // Validate credentials against provider schema
   const providerSchema = credentialSchemas[provider];
   const validatedCreds = providerSchema.parse(credentials);
-  const credsJson = JSON.stringify(validatedCreds);
+
+  // Encrypt before storing
+  const encrypted = encrypt(JSON.stringify(validatedCreds));
 
   // Check if exists
   const existing = await db
@@ -92,7 +104,7 @@ export async function upsertConnection(
       .set({
         isEnabled,
         environment,
-        credentials: credsJson,
+        credentials: encrypted,
         status: "untested",
         lastError: null,
         updatedAt: now,
@@ -103,7 +115,7 @@ export async function upsertConnection(
       provider,
       isEnabled,
       environment,
-      credentials: credsJson,
+      credentials: encrypted,
       status: "untested",
       updatedAt: now,
     });
@@ -131,10 +143,9 @@ export async function testConnection(
   }
 
   const row = rows[0];
-  const creds = JSON.parse(row.credentials) as Record<string, string>;
+  const creds = readCredentials(row.credentials) as Record<string, string>;
   const now = new Date().toISOString();
 
-  // Provider-specific test logic (stubs for now — will be replaced with real calls)
   let success = false;
   let message = "";
 
@@ -166,7 +177,6 @@ export async function testConnection(
     message = err instanceof Error ? err.message : "Unknown error";
   }
 
-  // Update status in DB
   await db
     .update(schema.apiConnections)
     .set({
@@ -191,5 +201,5 @@ export async function getRawCredentials(
     .limit(1);
 
   if (rows.length === 0) return null;
-  return JSON.parse(rows[0].credentials);
+  return readCredentials(rows[0].credentials);
 }

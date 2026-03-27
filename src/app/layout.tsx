@@ -17,7 +17,7 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className="font-sans">
         <Sidebar />
-        <div className="ml-60 min-h-screen">
+        <div className="min-h-screen lg:ml-60">
           <Header />
           <main className="p-6">{children}</main>
         </div>

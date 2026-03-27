@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { callClaude } from "@/lib/services/claude/client";
 import {
   getPrompt,
   updatePrompt,
@@ -127,22 +128,25 @@ export async function PATCH(
         }
 
         const start = Date.now();
+        const systemPrompt = prompt.systemPrompt
+          ? renderTemplate(prompt.systemPrompt, variables)
+          : "You are a trading analyst. Respond with valid JSON.";
         const rendered = renderTemplate(prompt.userPromptTemplate, variables);
 
-        // Mock response — will be replaced with real Claude call
-        const response = JSON.stringify(
-          {
-            action: "NO_TRADE",
-            confidence: 0,
-            reasoning: "This is a test render. Connect Claude API for real analysis.",
-            entry_price: null,
-            stop_loss: null,
-            take_profit: null,
-            risk_reward_ratio: null,
-          },
-          null,
-          2
-        );
+        let response: string;
+        try {
+          const claudeResult = await callClaude({
+            systemPrompt,
+            userPrompt: rendered,
+          });
+          response = claudeResult.content;
+        } catch (err) {
+          // Fallback to rendered prompt preview if Claude not available
+          response = JSON.stringify({
+            _test_error: err instanceof Error ? err.message : "Claude API unavailable",
+            _rendered_prompt: rendered.slice(0, 500),
+          }, null, 2);
+        }
         const durationMs = Date.now() - start;
 
         const testRun = await saveTestRun(
