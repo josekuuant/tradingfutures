@@ -228,6 +228,8 @@ export async function placeOrder(
       return { success: false, error: "Monitor mode — orders not allowed", errorCode: "MONITOR_MODE" };
     }
     if (executionMode === "manual_approval") {
+      // Clear pending key — the confirmed order will create a fresh one
+      clearPendingKey(request.idempotencyKey!);
       log.execution.info("Order queued for manual approval", {
         instrument: request.instrument,
         side: request.side,

@@ -234,5 +234,20 @@ export async function getRawCredentials(
     .limit(1);
 
   if (rows.length === 0) return null;
-  return readCredentials(rows[0].credentials);
+
+  const raw = readCredentials(rows[0].credentials);
+
+  // Validate against provider schema to catch corrupted data
+  const providerSchema = credentialSchemas[provider];
+  if (providerSchema) {
+    const result = providerSchema.safeParse(raw);
+    if (!result.success) {
+      log.system.warn(
+        `Credentials for ${provider} failed validation: ${result.error.issues.map((i) => i.message).join(", ")}`
+      );
+      // Return raw anyway — caller should handle gracefully
+    }
+  }
+
+  return raw;
 }

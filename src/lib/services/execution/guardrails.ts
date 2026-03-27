@@ -117,7 +117,9 @@ export function checkSlippage(
     return { passed: true }; // only applies to market orders with reference price
   }
 
-  const tickSize = 0.25; // NQ tick size
+  // Tick sizes per instrument (NQ/MNQ = 0.25, default 0.25)
+  const TICK_SIZES: Record<string, number> = { NQ: 0.25, MNQ: 0.25 };
+  const tickSize = TICK_SIZES[request.instrument] ?? 0.25;
   const slippageTicks =
     Math.abs(currentPrice - request.price) / tickSize;
 

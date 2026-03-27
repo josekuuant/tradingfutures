@@ -28,7 +28,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const result = await generateSignal({ instrument, timeframe });
+    const manualTrigger = body.manualTrigger === true;
+    const result = await generateSignal({ instrument, timeframe, manualTrigger });
 
     if (!result.success) {
       const trace = getLastTrace();

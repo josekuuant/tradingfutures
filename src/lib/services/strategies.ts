@@ -155,13 +155,26 @@ export async function duplicateStrategy(sourceId: string): Promise<Strategy | nu
 }
 
 export async function activateStrategy(id: string): Promise<Strategy | null> {
+  // Verify strategy exists before modifying state
+  const target = await getStrategy(id);
+  if (!target) return null;
+
   const now = new Date().toISOString();
-  await db.update(schema.strategies).set({ isActive: false, updatedAt: now });
-  await db
-    .update(schema.strategies)
-    .set({ isActive: true, updatedAt: now })
-    .where(eq(schema.strategies.id, id));
-  return getStrategy(id);
+  // Use transaction for atomicity — deactivate all + activate target
+  db.transaction((tx) => {
+    tx.update(schema.strategies).set({ isActive: false, updatedAt: now }).run();
+    tx.update(schema.strategies)
+      .set({ isActive: true, updatedAt: now })
+      .where(eq(schema.strategies.id, id))
+      .run();
+  });
+
+  // Verify activation succeeded
+  const result = await getStrategy(id);
+  if (result && !result.isActive) {
+    throw new Error(`Failed to activate strategy ${id}`);
+  }
+  return result;
 }
 
 export async function deactivateStrategy(id: string): Promise<Strategy | null> {

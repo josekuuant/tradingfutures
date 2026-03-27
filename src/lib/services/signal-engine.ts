@@ -150,7 +150,7 @@ export async function generateSignal(
   );
 
   // Manual trigger only bypasses cooldown — dedup and validation still run
-  const isManualTrigger = input.instrument !== undefined;
+  const isManualTrigger = input.manualTrigger === true;
   const effectiveReport = { ...filterReport };
   if (isManualTrigger && !filterReport.passed) {
     // Re-evaluate: only allow bypass of cooldown filter

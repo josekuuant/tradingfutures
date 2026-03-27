@@ -177,12 +177,18 @@ export async function duplicatePrompt(sourceId: string): Promise<Prompt | null> 
 }
 
 export async function activatePrompt(id: string): Promise<Prompt | null> {
+  const target = await getPrompt(id);
+  if (!target) return null;
+
   const now = new Date().toISOString();
-  await db.update(schema.prompts).set({ isActive: false, updatedAt: now });
-  await db
-    .update(schema.prompts)
-    .set({ isActive: true, updatedAt: now })
-    .where(eq(schema.prompts.id, id));
+  db.transaction((tx) => {
+    tx.update(schema.prompts).set({ isActive: false, updatedAt: now }).run();
+    tx.update(schema.prompts)
+      .set({ isActive: true, updatedAt: now })
+      .where(eq(schema.prompts.id, id))
+      .run();
+  });
+
   return getPrompt(id);
 }
 

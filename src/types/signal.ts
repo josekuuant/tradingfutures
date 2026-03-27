@@ -106,6 +106,8 @@ export interface Signal {
 export interface SignalEngineInput {
   instrument?: string;
   timeframe?: string;
+  /** Explicit flag for manual trigger — only bypasses cooldown, not dedup/validation */
+  manualTrigger?: boolean;
 }
 
 // ─── Engine result ───────────────────────────────────────────
