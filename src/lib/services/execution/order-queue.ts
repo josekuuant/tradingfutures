@@ -1,14 +1,69 @@
 import { log } from "@/lib/logger";
 import type {
   ProposedOrder,
+  ProposedOrderStatus,
   OrderRequest,
   ExecutionProvider,
 } from "@/types/execution";
 
 // ─── In-memory queue ─────────────────────────────────────────
 
-const queue: ProposedOrder[] = [];
+const queue: (ProposedOrder & { _version: number })[] = [];
 const MAX_HISTORY = 200;
+
+// ─── Valid status transitions (F8: explicit state machine) ───
+
+const VALID_TRANSITIONS: Record<ProposedOrderStatus, ProposedOrderStatus[]> = {
+  proposed: ["approved", "rejected", "cancelled"],
+  approved: ["submitted", "rejected", "cancelled"],
+  submitted: ["acknowledged", "filled", "partially_filled", "rejected", "cancelled"],
+  acknowledged: ["filled", "partially_filled", "cancelled"],
+  rejected: [],
+  cancelled: [],
+  filled: [],
+  partially_filled: ["filled"],
+};
+
+function canTransition(from: ProposedOrderStatus, to: ProposedOrderStatus): boolean {
+  return VALID_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+// F8: Atomic find-and-transition with version check
+function transitionOrder(
+  id: string,
+  expectedStatus: ProposedOrderStatus | ProposedOrderStatus[],
+  newStatus: ProposedOrderStatus,
+  updates: Partial<ProposedOrder> = {}
+): ProposedOrder | null {
+  const order = queue.find((o) => o.id === id);
+  if (!order) return null;
+
+  const allowed = Array.isArray(expectedStatus)
+    ? expectedStatus.includes(order.status)
+    : order.status === expectedStatus;
+
+  if (!allowed) {
+    log.execution.warn(
+      `Order ${id} transition rejected: ${order.status} → ${newStatus} (expected ${expectedStatus})`
+    );
+    return null;
+  }
+
+  if (!canTransition(order.status, newStatus)) {
+    log.execution.warn(
+      `Invalid transition: ${order.status} → ${newStatus} for order ${id}`
+    );
+    return null;
+  }
+
+  // Apply transition atomically
+  order.status = newStatus;
+  order.updatedAt = new Date().toISOString();
+  order._version++;
+  Object.assign(order, updates);
+
+  return order;
+}
 
 // ─── Create proposed order ───────────────────────────────────
 
@@ -28,7 +83,7 @@ export function proposeOrder(input: ProposeOrderInput): ProposedOrder {
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
 
-  const proposed: ProposedOrder = {
+  const proposed = {
     id,
     signalId: input.signalId,
     provider: input.provider,
@@ -38,7 +93,7 @@ export function proposeOrder(input: ProposeOrderInput): ProposedOrder {
     quantity: input.request.quantity,
     price: input.request.price ?? null,
     stopPrice: input.request.stopPrice ?? null,
-    status: input.guardrailsPassed ? "proposed" : "rejected",
+    status: (input.guardrailsPassed ? "proposed" : "rejected") as ProposedOrderStatus,
     signalAction: input.signalAction,
     signalConfidence: input.signalConfidence,
     signalReasoning: input.signalReasoning,
@@ -54,6 +109,7 @@ export function proposeOrder(input: ProposeOrderInput): ProposedOrder {
     approvedAt: null,
     submittedAt: null,
     filledAt: null,
+    _version: 0,
   };
 
   queue.unshift(proposed);
@@ -70,48 +126,33 @@ export function proposeOrder(input: ProposeOrderInput): ProposedOrder {
 // ─── Approve ─────────────────────────────────────────────────
 
 export function approveOrder(id: string): ProposedOrder | null {
-  const order = queue.find((o) => o.id === id);
-  if (!order || order.status !== "proposed") return null;
-
-  order.status = "approved";
-  order.approvedAt = new Date().toISOString();
-  order.updatedAt = new Date().toISOString();
-
-  log.execution.info(`Order approved: ${id}`);
-  return order;
+  const result = transitionOrder(id, "proposed", "approved", {
+    approvedAt: new Date().toISOString(),
+  });
+  if (result) log.execution.info(`Order approved: ${id}`);
+  return result;
 }
 
 // ─── Reject ──────────────────────────────────────────────────
 
 export function rejectOrder(id: string, reason: string): ProposedOrder | null {
-  const order = queue.find((o) => o.id === id);
-  if (!order || (order.status !== "proposed" && order.status !== "approved")) {
-    return null;
-  }
-
-  order.status = "rejected";
-  order.rejectionReason = reason;
-  order.updatedAt = new Date().toISOString();
-
-  log.execution.info(`Order rejected: ${id} — ${reason}`);
-  return order;
+  const result = transitionOrder(id, ["proposed", "approved"], "rejected", {
+    rejectionReason: reason,
+  });
+  if (result) log.execution.info(`Order rejected: ${id} — ${reason}`);
+  return result;
 }
 
 // ─── Cancel ──────────────────────────────────────────────────
 
 export function cancelProposedOrder(id: string): ProposedOrder | null {
-  const order = queue.find((o) => o.id === id);
-  if (!order) return null;
-
-  if (order.status === "filled" || order.status === "partially_filled") {
-    return null; // Can't cancel filled orders
-  }
-
-  order.status = "cancelled";
-  order.updatedAt = new Date().toISOString();
-
-  log.execution.info(`Order cancelled: ${id}`);
-  return order;
+  const result = transitionOrder(
+    id,
+    ["proposed", "approved", "submitted", "acknowledged"],
+    "cancelled"
+  );
+  if (result) log.execution.info(`Order cancelled: ${id}`);
+  return result;
 }
 
 // ─── Mark submitted ──────────────────────────────────────────
@@ -120,16 +161,12 @@ export function markSubmitted(
   id: string,
   brokerOrderId: string
 ): ProposedOrder | null {
-  const order = queue.find((o) => o.id === id);
-  if (!order) return null;
-
-  order.status = "submitted";
-  order.brokerOrderId = brokerOrderId;
-  order.submittedAt = new Date().toISOString();
-  order.updatedAt = new Date().toISOString();
-
-  log.execution.info(`Order submitted: ${id} → broker ${brokerOrderId}`);
-  return order;
+  const result = transitionOrder(id, "approved", "submitted", {
+    brokerOrderId,
+    submittedAt: new Date().toISOString(),
+  });
+  if (result) log.execution.info(`Order submitted: ${id} → broker ${brokerOrderId}`);
+  return result;
 }
 
 // ─── Mark filled ─────────────────────────────────────────────
@@ -142,16 +179,22 @@ export function markFilled(
   const order = queue.find((o) => o.id === id);
   if (!order) return null;
 
-  order.status = filledQuantity >= order.quantity ? "filled" : "partially_filled";
-  order.avgFillPrice = avgFillPrice;
-  order.filledQuantity = filledQuantity;
-  order.filledAt = new Date().toISOString();
-  order.updatedAt = new Date().toISOString();
+  const newStatus: ProposedOrderStatus =
+    filledQuantity >= order.quantity ? "filled" : "partially_filled";
 
-  log.execution.info(
-    `Order ${order.status}: ${id} @ ${avgFillPrice} (${filledQuantity}/${order.quantity})`
+  const result = transitionOrder(
+    id,
+    ["submitted", "acknowledged", "partially_filled"],
+    newStatus,
+    { avgFillPrice, filledQuantity, filledAt: new Date().toISOString() }
   );
-  return order;
+
+  if (result) {
+    log.execution.info(
+      `Order ${newStatus}: ${id} @ ${avgFillPrice} (${filledQuantity}/${order.quantity})`
+    );
+  }
+  return result;
 }
 
 // ─── Queries ─────────────────────────────────────────────────

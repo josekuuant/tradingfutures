@@ -178,7 +178,17 @@ function PendingOrderRow({
           ) : (
             <>
               <button
-                onClick={() => onAction(order.id, "approve_and_execute")}
+                onClick={() => {
+                  const confirmed = window.confirm(
+                    `Execute order?\n\n` +
+                    `${order.side.toUpperCase()} ${order.quantity} ${order.instrument} ${order.type}` +
+                    `${order.price ? ` @ ${order.price.toFixed(2)}` : " MKT"}\n` +
+                    `Provider: ${order.provider}\n` +
+                    `Confidence: ${Math.round(order.signalConfidence * 100)}%\n\n` +
+                    `This will send a REAL order to your broker.`
+                  );
+                  if (confirmed) onAction(order.id, "approve_and_execute");
+                }}
                 className="inline-flex items-center gap-1 rounded bg-success/10 px-2.5 py-1.5 text-[10px] font-medium text-success hover:bg-success/20"
                 title="Approve & Execute"
               >

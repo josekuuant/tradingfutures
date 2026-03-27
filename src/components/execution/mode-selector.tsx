@@ -83,7 +83,18 @@ export function ModeSelector({ mode, onChange }: ModeSelectorProps) {
           return (
             <button
               key={m.value}
-              onClick={() => onChange(m.value)}
+              onClick={() => {
+                if (isDangerous && !isActive) {
+                  const confirmed = window.confirm(
+                    `⚠️ Switch to ${m.label}?\n\n` +
+                    `${m.description}\n\n` +
+                    `This mode ${m.value === "full_auto" ? "WILL EXECUTE REAL ORDERS AUTOMATICALLY" : "may execute orders if guardrails pass"}.\n\n` +
+                    `Are you sure?`
+                  );
+                  if (!confirmed) return;
+                }
+                onChange(m.value);
+              }}
               className={cn(
                 "flex items-start gap-3 rounded-lg border p-3 text-left transition-all",
                 isActive && isDangerous

@@ -39,11 +39,15 @@ export function unregisterAdapter(provider: ExecutionProvider): void {
 
 // ─── Auto-initialize from stored credentials ────────────────
 
-let initialized = false;
+let initPromise: Promise<void> | null = null;
 
 export async function ensureAdaptersInitialized(): Promise<void> {
-  if (initialized) return;
-  initialized = true;
+  if (initPromise) return initPromise;
+  initPromise = doInit();
+  return initPromise;
+}
+
+async function doInit(): Promise<void> {
 
   // Tradovate
   try {

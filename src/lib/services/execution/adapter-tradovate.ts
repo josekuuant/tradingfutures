@@ -95,11 +95,20 @@ export class TradovateAdapter implements ExecutionProviderAdapter {
     });
   }
 
+  // F9: Mutex for token refresh — prevents concurrent authenticate() calls
+  private refreshPromise: Promise<void> | null = null;
+
   private async ensureToken(): Promise<string> {
     if (!this.token || Date.now() > this.token.expiresAt - REFRESH_BEFORE_MS) {
-      await this.authenticate();
+      if (!this.refreshPromise) {
+        this.refreshPromise = this.authenticate().finally(() => {
+          this.refreshPromise = null;
+        });
+      }
+      await this.refreshPromise;
     }
-    return this.token!.accessToken;
+    if (!this.token) throw new Error("Tradovate authentication failed");
+    return this.token.accessToken;
   }
 
   // ── HTTP helpers ─────────────────────────────────────────

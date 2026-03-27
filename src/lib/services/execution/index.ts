@@ -20,6 +20,7 @@ import {
   recordFailure,
   getBreakerState,
 } from "./circuit-breaker";
+import { getMarketSnapshot } from "@/lib/services/market";
 import type {
   ExecutionMode,
   ExecutionProvider,
@@ -31,6 +32,7 @@ import type {
   GuardrailConfig,
   ProviderHealth,
 } from "@/types/execution";
+import type { Instrument } from "@/types/market";
 import { DEFAULT_GUARDRAILS } from "@/types/execution";
 
 // ─── Unified state ───────────────────────────────────────────
@@ -41,11 +43,19 @@ let guardrails: GuardrailConfig = { ...DEFAULT_GUARDRAILS };
 
 // ─── Mode management ────────────────────────────────────────
 
+const VALID_MODES: ExecutionMode[] = [
+  "disabled", "monitor", "dry_run", "manual_approval", "semi_auto", "full_auto",
+];
+
 export function getExecutionMode(): ExecutionMode {
   return executionMode;
 }
 
 export function setExecutionMode(mode: ExecutionMode): void {
+  if (!VALID_MODES.includes(mode)) {
+    log.execution.error(`Invalid execution mode rejected: ${mode}`);
+    return;
+  }
   log.execution.info(`Execution mode → ${mode}`);
   executionMode = mode;
 }
@@ -58,9 +68,7 @@ export function getActiveProvider(): ExecutionProvider | null {
 
 export function setActiveProvider(provider: ExecutionProvider | null): void {
   activeProvider = provider;
-  log.execution.info(
-    `Active execution provider → ${provider ?? "none"}`
-  );
+  log.execution.info(`Active execution provider → ${provider ?? "none"}`);
 }
 
 // ─── Guardrail config ────────────────────────────────────────
@@ -137,47 +145,51 @@ export async function testConnection(
   await ensureAdaptersInitialized();
 
   const target = provider ?? activeProvider;
-  if (!target) {
-    return { ok: false, message: "No execution provider selected" };
-  }
+  if (!target) return { ok: false, message: "No execution provider selected" };
 
   const adapter = getAdapter(target);
-  if (!adapter) {
-    return { ok: false, message: `Provider ${target} not registered` };
-  }
+  if (!adapter) return { ok: false, message: `Provider ${target} not registered` };
 
   try {
     const result = await adapter.connect();
     if (result.ok) {
       recordSuccess(target);
-      log.execution.info(`${target} connection successful`);
     } else {
       recordFailure(target, guardrails.circuitBreakerThreshold);
-      log.execution.warn(`${target} connection failed: ${result.message}`);
     }
     return result;
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     recordFailure(target, guardrails.circuitBreakerThreshold);
-    log.execution.error(`${target} connection error: ${msg}`);
     return { ok: false, message: msg };
   }
 }
 
 // ─── Order placement (unified, mode-gated) ───────────────────
+// F1: Idempotency key generated + recorded BEFORE execution
+// F2: Key generated before guardrails check
+// F3: No mode mutation — uses `bypassModeGate` flag
+// F6: Kill switch re-checked immediately before adapter call
+// F7: currentPrice fetched from market data service
 
 export async function placeOrder(
   request: OrderRequest,
-  provider?: ExecutionProvider
+  provider?: ExecutionProvider,
+  options?: { bypassModeGate?: boolean }
 ): Promise<OrderResult> {
   await ensureAdaptersInitialized();
 
   const target = provider ?? activeProvider;
+  const bypassModeGate = options?.bypassModeGate ?? false;
 
-  // Generate idempotency key if not provided
+  // F2: Generate idempotency key FIRST, before any checks
   if (!request.idempotencyKey) {
     request.idempotencyKey = crypto.randomUUID();
   }
+
+  // F1: Record idempotency key BEFORE execution (not after)
+  // This prevents two concurrent requests from both passing the check
+  recordIdempotencyKey(request.idempotencyKey, "pending");
 
   // ── Risk control check (runs BEFORE mode gates) ────────────
 
@@ -192,7 +204,7 @@ export async function placeOrder(
       };
     }
     if (riskCheck.forceSafeMode) {
-      log.execution.warn("Risk control forcing safe mode — manual approval required");
+      log.execution.warn("Risk control forcing safe mode");
       return {
         success: false,
         requiresApproval: true,
@@ -201,73 +213,43 @@ export async function placeOrder(
     }
   }
 
-  // ── Mode gates ─────────────────────────────────────────────
+  // ── Mode gates (skipped for confirmed orders via F3) ───────
 
-  if (executionMode === "disabled") {
-    return {
-      success: false,
-      error: "Execution is disabled",
-      errorCode: "DISABLED",
-    };
-  }
-
-  if (executionMode === "monitor") {
-    return {
-      success: false,
-      error: "Monitor mode — orders not allowed",
-      errorCode: "MONITOR_MODE",
-    };
-  }
-
-  if (executionMode === "manual_approval") {
-    log.execution.info("Order queued for manual approval", {
-      instrument: request.instrument,
-      side: request.side,
-      quantity: request.quantity,
-    });
-    return {
-      success: false,
-      requiresApproval: true,
-      error: "Manual approval required",
-    };
+  if (!bypassModeGate) {
+    if (executionMode === "disabled") {
+      return { success: false, error: "Execution is disabled", errorCode: "DISABLED" };
+    }
+    if (executionMode === "monitor") {
+      return { success: false, error: "Monitor mode — orders not allowed", errorCode: "MONITOR_MODE" };
+    }
+    if (executionMode === "manual_approval") {
+      log.execution.info("Order queued for manual approval", {
+        instrument: request.instrument,
+        side: request.side,
+        quantity: request.quantity,
+      });
+      return { success: false, requiresApproval: true, error: "Manual approval required" };
+    }
   }
 
   // ── Provider check ─────────────────────────────────────────
 
   if (!target) {
-    return {
-      success: false,
-      error: "No execution provider selected",
-      errorCode: "PROVIDER_ERROR",
-    };
+    return { success: false, error: "No execution provider selected", errorCode: "PROVIDER_ERROR" };
   }
 
   const adapter = getAdapter(target);
   if (!adapter) {
-    return {
-      success: false,
-      error: `Provider ${target} not registered`,
-      errorCode: "PROVIDER_ERROR",
-    };
+    return { success: false, error: `Provider ${target} not registered`, errorCode: "PROVIDER_ERROR" };
   }
 
   // ── Circuit breaker ────────────────────────────────────────
 
-  if (
-    isCircuitOpen(
-      target,
-      guardrails.circuitBreakerThreshold,
-      guardrails.circuitBreakerResetSeconds
-    )
-  ) {
-    return {
-      success: false,
-      error: `Circuit breaker open for ${target}. Provider unstable.`,
-      errorCode: "CIRCUIT_BREAKER",
-    };
+  if (isCircuitOpen(target, guardrails.circuitBreakerThreshold, guardrails.circuitBreakerResetSeconds)) {
+    return { success: false, error: `Circuit breaker open for ${target}`, errorCode: "CIRCUIT_BREAKER" };
   }
 
-  // ── Guardrails ─────────────────────────────────────────────
+  // ── Guardrails (F7: fetch real currentPrice) ───────────────
 
   let positions: NormalizedPosition[] = [];
   let recentOrders: NormalizedOrder[] = [];
@@ -277,7 +259,19 @@ export async function placeOrder(
       adapter.getOpenOrders(),
     ]);
   } catch {
-    // Best effort — run guardrails with empty data
+    // Best effort
+  }
+
+  // F7: Get current price from market data for slippage check
+  let currentPrice: number | null = null;
+  try {
+    const instrument = request.instrument as Instrument;
+    if (instrument === "NQ" || instrument === "MNQ") {
+      const snapshot = await getMarketSnapshot(instrument, "1m");
+      currentPrice = snapshot.quote.lastPrice;
+    }
+  } catch {
+    // Market data unavailable — slippage check will skip
   }
 
   const guardrailResult = runGuardrails(
@@ -285,11 +279,10 @@ export async function placeOrder(
     positions,
     recentOrders,
     guardrails,
-    null // currentPrice — would need market data service
+    currentPrice
   );
 
   if (!guardrailResult.passed) {
-    // Record anomaly for rejection tracking
     if (guardrailResult.errorCode === "DUPLICATE_ORDER") {
       anomaly.duplicateExecution(request.instrument, guardrailResult.error ?? "");
     } else {
@@ -304,7 +297,7 @@ export async function placeOrder(
 
   // ── Dry run mode ───────────────────────────────────────────
 
-  if (executionMode === "dry_run") {
+  if (executionMode === "dry_run" && !bypassModeGate) {
     log.execution.info(
       `DRY RUN: ${request.side} ${request.quantity} ${request.instrument} ${request.type}`,
       { price: request.price, stopPrice: request.stopPrice, provider: target }
@@ -333,17 +326,21 @@ export async function placeOrder(
     };
   }
 
-  // ── Execute (semi_auto / full_auto) ────────────────────────
+  // ── F6: Re-check kill switches immediately before execution ─
+
+  const finalRiskCheck = checkRiskControls(target, request.instrument);
+  if (!finalRiskCheck.allowed) {
+    log.execution.error(`Final risk check blocked: ${finalRiskCheck.reason}`);
+    return { success: false, error: finalRiskCheck.reason, errorCode: "CIRCUIT_BREAKER" };
+  }
+
+  // ── Execute (semi_auto / full_auto / confirmed) ────────────
 
   try {
     const accounts = await adapter.getAccounts();
     const accountId = accounts[0]?.id;
     if (!accountId) {
-      return {
-        success: false,
-        error: "No account available for execution",
-        errorCode: "PROVIDER_ERROR",
-      };
+      return { success: false, error: "No account available", errorCode: "PROVIDER_ERROR" };
     }
 
     log.execution.info(
@@ -369,32 +366,23 @@ export async function placeOrder(
     recordFailure(target, guardrails.circuitBreakerThreshold);
     anomaly.rejection(target, `Provider error: ${msg}`);
 
-    // Check if auth-related
     if (msg.includes("401") || msg.includes("auth") || msg.includes("token")) {
       anomaly.authFailure(target, msg);
     }
 
     log.execution.error(`Order failed via ${target}: ${msg}`);
-    return {
-      success: false,
-      error: msg,
-      errorCode: "PROVIDER_ERROR",
-    };
+    return { success: false, error: msg, errorCode: "PROVIDER_ERROR" };
   }
 }
 
-// ─── Confirm a manual-approval order ─────────────────────────
+// ─── F3: Confirm order WITHOUT mutating global executionMode ─
 
 export async function confirmOrder(
   request: OrderRequest,
   provider?: ExecutionProvider
 ): Promise<OrderResult> {
-  // Temporarily override mode to semi_auto for this one order
-  const prevMode = executionMode;
-  executionMode = "semi_auto";
-  const result = await placeOrder(request, provider);
-  executionMode = prevMode;
-  return result;
+  // Use bypassModeGate flag instead of mutating global state
+  return placeOrder(request, provider, { bypassModeGate: true });
 }
 
 // ─── Cancel order ────────────────────────────────────────────
@@ -427,21 +415,15 @@ export async function flattenPosition(
   provider?: ExecutionProvider
 ): Promise<OrderResult> {
   const target = provider ?? activeProvider;
-  if (!target) {
-    return { success: false, error: "No provider selected", errorCode: "PROVIDER_ERROR" };
-  }
+  if (!target) return { success: false, error: "No provider selected", errorCode: "PROVIDER_ERROR" };
 
   const adapter = getAdapter(target);
-  if (!adapter) {
-    return { success: false, error: `Provider ${target} not registered`, errorCode: "PROVIDER_ERROR" };
-  }
+  if (!adapter) return { success: false, error: `Provider ${target} not registered`, errorCode: "PROVIDER_ERROR" };
 
   try {
     const accounts = await adapter.getAccounts();
     const accountId = accounts[0]?.id;
-    if (!accountId) {
-      return { success: false, error: "No account", errorCode: "PROVIDER_ERROR" };
-    }
+    if (!accountId) return { success: false, error: "No account", errorCode: "PROVIDER_ERROR" };
 
     log.execution.info(`Flatten ${instrument} via ${target}`);
     const order = await adapter.flattenPosition(instrument, accountId);
@@ -453,12 +435,11 @@ export async function flattenPosition(
   }
 }
 
-// ─── Re-exports for API compatibility ────────────────────────
+// ─── Re-exports ──────────────────────────────────────────────
 
 export { ensureAdaptersInitialized } from "./provider-registry";
 export { registerAdapter, getAdapter as getProviderAdapter } from "./provider-registry";
 
-// Risk control
 export {
   getRiskControlStatus,
   getActiveKillSwitches,

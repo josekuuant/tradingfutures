@@ -37,7 +37,18 @@ export function isCircuitOpen(
 ): boolean {
   const b = getBreaker(provider);
 
-  if (b.state === "closed") return false;
+  // F10: Check if failures have reached threshold even if state is "closed"
+  if (b.state === "closed") {
+    if (b.consecutiveFailures >= threshold) {
+      b.state = "open";
+      b.openedAt = Date.now();
+      log.execution.error(
+        `Circuit breaker OPEN for ${provider} — ${b.consecutiveFailures} failures ≥ ${threshold} threshold`
+      );
+      return true;
+    }
+    return false;
+  }
 
   if (b.state === "open") {
     // Check if enough time passed to try half-open
