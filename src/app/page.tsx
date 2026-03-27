@@ -9,10 +9,14 @@ import {
   KeyLevelsCard,
   AlertsCard,
 } from "@/components/dashboard";
+import { MockDataBanner } from "@/components/shared/mock-data-banner";
 
 export default function DashboardPage() {
   return (
     <div className="space-y-6">
+      {/* ── Mock data warning ──────────────────────────────────── */}
+      <MockDataBanner adapterName="mock" />
+
       {/* ── Row 1: Connection Status ──────────────────────────── */}
       <div className="grid gap-4 sm:grid-cols-3">
         <ConnectionCard

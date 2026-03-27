@@ -10,6 +10,7 @@ import { SessionLevelsPanel } from "@/components/market/session-levels";
 import { StreamLog } from "@/components/market/stream-log";
 import { TimeframeSelector } from "@/components/market/timeframe-selector";
 import { InstrumentSelector } from "@/components/market/instrument-selector";
+import { MockDataBanner } from "@/components/shared/mock-data-banner";
 
 export default function MarketPage() {
   const [instrument, setInstrument] = useState<Instrument>("NQ");
@@ -102,6 +103,9 @@ export default function MarketPage() {
           </button>
         </div>
       </div>
+
+      {/* ── Mock warning ────────────────────────────────────── */}
+      <MockDataBanner adapterName="mock" />
 
       {/* ── Error ───────────────────────────────────────────── */}
       {error && (

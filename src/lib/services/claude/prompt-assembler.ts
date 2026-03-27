@@ -16,9 +16,10 @@ export interface AssembledPrompt {
 export function assemblePrompt(
   prompt: Prompt,
   strategy: Strategy,
-  snapshot: MarketSnapshot
+  snapshot: MarketSnapshot,
+  candleCount = 50
 ): AssembledPrompt {
-  const variables = buildVariables(strategy, snapshot);
+  const variables = buildVariables(strategy, snapshot, candleCount);
 
   // Render user prompt template with variables
   const userPrompt = renderTemplate(prompt.userPromptTemplate, variables);
@@ -42,14 +43,14 @@ export function assemblePrompt(
 
 function buildVariables(
   strategy: Strategy,
-  snapshot: MarketSnapshot
+  snapshot: MarketSnapshot,
+  candleCount: number
 ): Record<string, string> {
   const q = snapshot.quote;
   const l = snapshot.levels;
   const candles = snapshot.recentCandles;
 
-  // Limit candle data to last 20 for token efficiency
-  const recentCandles = candles.slice(-20);
+  const recentCandles = candles.slice(-candleCount);
   const candleStr = recentCandles
     .map(
       (c) =>

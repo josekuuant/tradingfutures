@@ -54,11 +54,26 @@ export async function getMarketSnapshot(
   instrument: Instrument = "NQ",
   timeframe: Timeframe = "5m"
 ): Promise<MarketSnapshot> {
-  const [rawQuote, rawCandles, healthCheck] = await Promise.all([
-    adapter.getQuote(instrument),
-    adapter.getCandles(instrument, timeframe, 100),
-    adapter.checkHealth(),
-  ]);
+  // M8: Graceful degradation — quote is required, candles/health are best-effort
+  const rawQuote = await adapter.getQuote(instrument);
+
+  let rawCandles: Awaited<ReturnType<typeof adapter.getCandles>> = [];
+  try {
+    rawCandles = await adapter.getCandles(instrument, timeframe, 100);
+  } catch {
+    rawCandles = [];
+  }
+
+  let healthCheck: Awaited<ReturnType<typeof adapter.checkHealth>> = {
+    ok: false,
+    latencyMs: -1,
+    message: "Health check failed",
+  };
+  try {
+    healthCheck = await adapter.checkHealth();
+  } catch {
+    // keep defaults
+  }
 
   const quote = normalizeQuote(rawQuote, instrument);
   const candles = normalizeCandles(rawCandles);

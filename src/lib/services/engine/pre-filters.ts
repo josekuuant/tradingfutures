@@ -28,7 +28,7 @@ export function runPreFilters(
     checkNoTradeRules(strategy),
     checkScheduleFilter(strategy),
     checkNewsFilter(strategy),
-    checkDuplicateSignal(recentSignals, config),
+    checkDuplicateSignal(recentSignals, config, snapshot.quote.instrument),
   ];
 
   const passed = results.every((r) => r.verdict === "pass");
@@ -245,22 +245,28 @@ function checkNewsFilter(strategy: Strategy): FilterResult {
 
 function checkDuplicateSignal(
   recentSignals: Signal[],
-  config: EngineConfig
+  config: EngineConfig,
+  instrument: string
 ): FilterResult {
-  if (recentSignals.length === 0) {
+  // B7: Filter by same instrument before dedup
+  const sameInstrument = recentSignals.filter(
+    (s) => s.instrument === instrument
+  );
+
+  if (sameInstrument.length === 0) {
     return {
       filter: "duplicate_signal",
       verdict: "pass",
-      reason: "No recent signals — no duplicate risk",
+      reason: "No recent signals for this instrument",
     };
   }
 
-  const lastN = recentSignals.slice(0, config.maxConsecutiveSameSignal);
+  const lastN = sameInstrument.slice(0, config.maxConsecutiveSameSignal);
   if (lastN.length < config.maxConsecutiveSameSignal) {
     return {
       filter: "duplicate_signal",
       verdict: "pass",
-      reason: `Only ${lastN.length} recent signals — below dedup threshold`,
+      reason: `Only ${lastN.length} recent ${instrument} signals — below dedup threshold`,
     };
   }
 

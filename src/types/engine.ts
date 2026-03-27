@@ -48,6 +48,9 @@ export const engineConfigSchema = z.object({
   minRelativeVolume: z.number().min(0).max(10).optional(),
   tradingHoursET: z.tuple([z.number().min(0).max(24), z.number().min(0).max(24)]).optional(),
   maxConsecutiveSameSignal: z.number().int().min(1).max(50).optional(),
+  minConfidence: z.number().min(0).max(1).optional(),
+  maxDataAgeSeconds: z.number().int().min(5).max(600).optional(),
+  promptCandleCount: z.number().int().min(10).max(200).optional(),
 });
 
 export type EngineConfigUpdate = z.infer<typeof engineConfigSchema>;
@@ -65,6 +68,12 @@ export interface EngineConfig {
   tradingHoursET: [number, number];
   /** Maximum identical signals in a row before dedup kicks in */
   maxConsecutiveSameSignal: number;
+  /** Minimum confidence to accept a BUY/SELL (below this → force NO_TRADE) */
+  minConfidence: number;
+  /** Maximum age of market data in seconds before rejecting */
+  maxDataAgeSeconds: number;
+  /** Number of candles to include in Claude prompt */
+  promptCandleCount: number;
 }
 
 export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
@@ -74,4 +83,7 @@ export const DEFAULT_ENGINE_CONFIG: EngineConfig = {
   minRelativeVolume: 0.3,
   tradingHoursET: [9.5, 16],
   maxConsecutiveSameSignal: 3,
+  minConfidence: 0.5,
+  maxDataAgeSeconds: 120,
+  promptCandleCount: 50,
 };

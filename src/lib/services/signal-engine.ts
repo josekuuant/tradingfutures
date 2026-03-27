@@ -102,6 +102,25 @@ export async function generateSignal(
     return fail("MARKET_DATA_FAILED", `Failed to get market data: ${msg}`);
   }
 
+  // 3b. Validate market data freshness
+  const quoteAge = (Date.now() - new Date(snapshot.quote.timestamp).getTime()) / 1000;
+  if (quoteAge > engineConfig.maxDataAgeSeconds) {
+    const msg = `Market data is ${Math.round(quoteAge)}s old (max: ${engineConfig.maxDataAgeSeconds}s)`;
+    log.engine.warn(msg);
+    pushTrace({
+      outcome: "error",
+      instrument,
+      timeframe,
+      strategyName: strategy.name,
+      promptName: activePrompt.name,
+      filterReport: null,
+      signalId: null,
+      error: msg,
+      durationMs: Date.now() - startTime,
+    });
+    return fail("MARKET_DATA_FAILED", msg);
+  }
+
   // 4. Get recent signals for dedup check
   const recentSignals = await listSignals(10);
 
@@ -115,10 +134,19 @@ export async function generateSignal(
     lastRunAt
   );
 
-  // Check if filters passed
-  const skipFilters = input.instrument !== undefined; // Manual trigger bypasses filters
-  if (!filterReport.passed && !skipFilters) {
-    const skippedFilters = filterReport.results
+  // Manual trigger only bypasses cooldown — dedup and validation still run
+  const isManualTrigger = input.instrument !== undefined;
+  const effectiveReport = { ...filterReport };
+  if (isManualTrigger && !filterReport.passed) {
+    // Re-evaluate: only allow bypass of cooldown filter
+    const nonCooldownSkips = filterReport.results.filter(
+      (r) => r.verdict === "skip" && r.filter !== "cooldown"
+    );
+    effectiveReport.passed = nonCooldownSkips.length === 0;
+  }
+
+  if (!effectiveReport.passed) {
+    const skippedFilters = effectiveReport.results
       .filter((r) => r.verdict === "skip")
       .map((r) => `${r.filter}: ${r.reason}`)
       .join("; ");
@@ -131,17 +159,22 @@ export async function generateSignal(
       timeframe,
       strategyName: strategy.name,
       promptName: activePrompt.name,
-      filterReport,
+      filterReport: effectiveReport,
       signalId: null,
       error: null,
       durationMs: Date.now() - startTime,
     });
 
-    return fail("FILTERED", `Pre-filters not passed: ${skippedFilters}` as string);
+    return fail("FILTERED", `Pre-filters not passed: ${skippedFilters}`);
   }
 
   // 6. Assemble prompt
-  const assembled = assemblePrompt(activePrompt, strategy, snapshot);
+  const assembled = assemblePrompt(
+    activePrompt,
+    strategy,
+    snapshot,
+    engineConfig.promptCandleCount
+  );
 
   log.engine.info(`Calling Claude for ${instrument} ${timeframe}`, {
     strategy: strategy.name,
@@ -193,8 +226,10 @@ export async function generateSignal(
     return fail("CLAUDE_API_ERROR", msg);
   }
 
-  // 8. Parse response
-  const parseResult = parseClaudeResponse(claudeResponse.content);
+  // 8. Parse response (with minConfidence enforcement)
+  const parseResult = parseClaudeResponse(claudeResponse.content, {
+    minConfidence: engineConfig.minConfidence,
+  });
 
   if (!parseResult.success) {
     log.engine.error(`Parse error: ${parseResult.error}`);

@@ -150,11 +150,15 @@ export async function updatePrompt(
 }
 
 export async function deletePrompt(id: string): Promise<boolean> {
-  // Delete test runs and versions first
-  await db.delete(schema.promptTestRuns).where(eq(schema.promptTestRuns.promptId, id));
-  await db.delete(schema.promptVersions).where(eq(schema.promptVersions.promptId, id));
-  const result = await db.delete(schema.prompts).where(eq(schema.prompts.id, id));
-  return (result as unknown as { changes: number }).changes > 0;
+  // B10: Transaction ensures all-or-nothing cascading delete
+  let deleted = false;
+  db.transaction((tx) => {
+    tx.delete(schema.promptTestRuns).where(eq(schema.promptTestRuns.promptId, id)).run();
+    tx.delete(schema.promptVersions).where(eq(schema.promptVersions.promptId, id)).run();
+    const result = tx.delete(schema.prompts).where(eq(schema.prompts.id, id)).run();
+    deleted = (result as unknown as { changes: number }).changes > 0;
+  });
+  return deleted;
 }
 
 export async function duplicatePrompt(sourceId: string): Promise<Prompt | null> {
