@@ -139,5 +139,24 @@ sqlite.exec(`
     ON signals(action);
 `);
 
+sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS backtest_runs (
+    id TEXT PRIMARY KEY,
+    config TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    progress INTEGER NOT NULL DEFAULT 0,
+    signals TEXT NOT NULL DEFAULT '[]',
+    results TEXT,
+    error TEXT,
+    strategy_name TEXT NOT NULL,
+    prompt_name TEXT NOT NULL,
+    started_at TEXT NOT NULL DEFAULT (datetime('now')),
+    completed_at TEXT
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_backtest_runs_started
+    ON backtest_runs(started_at DESC);
+`);
+
 console.log("✓ Database migrated successfully");
 sqlite.close();

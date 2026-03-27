@@ -169,3 +169,24 @@ export const signals = sqliteTable("signals", {
 });
 
 export type SignalRow = typeof signals.$inferSelect;
+
+// ─── Backtest Runs ───────────────────────────────────────────
+export const backtestRuns = sqliteTable("backtest_runs", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  config: text("config").notNull(),         // JSON BacktestConfig
+  status: text("status").notNull().default("pending"),
+  progress: integer("progress").notNull().default(0),
+  signals: text("signals").notNull().default("[]"),  // JSON BacktestSignal[]
+  results: text("results"),                 // JSON BacktestResults | null
+  error: text("error"),
+  strategyName: text("strategy_name").notNull(),
+  promptName: text("prompt_name").notNull(),
+  startedAt: text("started_at")
+    .notNull()
+    .default(sql`(datetime('now'))`),
+  completedAt: text("completed_at"),
+});
+
+export type BacktestRunRow = typeof backtestRuns.$inferSelect;
