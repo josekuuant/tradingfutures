@@ -9,57 +9,43 @@ import type {
   OrderStatus,
 } from "@/types/execution";
 
-// ─── Connection modes ────────────────────────────────────────
-
-export type NinjaTraderMode = "native_api" | "desktop_bridge";
+// ─── NinjaTrader Connection Modes ────────────────────────────
+//
+// NinjaTrader 8 does NOT have a standalone REST API.
+// External connections require one of:
+//
+// 1. CrossTrade REST API (recommended) — third-party bridge add-on
+//    that exposes NT8 functionality via REST. Runs on the same
+//    Windows machine as NinjaTrader desktop.
+//    https://crosstrade.io/crosstrade-api
+//
+// 2. NinjaTrader ATI (Automated Trading Interface) — native
+//    DLL/File interface. Requires NinjaTrader desktop running.
+//
+// This adapter supports mode 1 (REST bridge) with configurable
+// base URL. Any REST-compatible bridge that follows the same
+// contract will work.
+//
+// IMPORTANT: NinjaTrader desktop MUST be running on a Windows
+// machine for ANY external integration to work.
 
 // ─── Config ──────────────────────────────────────────────────
 
-const DEFAULT_ATI_PORT = 36973;
+const DEFAULT_BRIDGE_PORT = 8080;
+const REQUEST_TIMEOUT_MS = 10_000;
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 1500;
 
-/**
- * NinjaTrader Adapter — supports two connection modes:
- *
- * 1. native_api: Connects to NinjaTrader's ATI (Automated Trading Interface)
- *    via HTTP on localhost. Requires NinjaTrader desktop running with ATI enabled.
- *    This is the primary integration path.
- *
- * 2. desktop_bridge: Placeholder for future local bridge application that
- *    would act as middleware between this backend and NinjaTrader desktop.
- *    Architecture prepared but not implemented — see BridgeInterface below.
- */
-
-// ─── Credentials ─────────────────────────────────────────────
-
 interface NinjaTraderCredentials {
+  /** Bridge host (usually localhost or LAN IP) */
   host: string;
+  /** Bridge port */
   port: number;
+  /** API key for the bridge (CrossTrade uses Bearer token) */
   apiKey?: string;
-  mode: NinjaTraderMode;
+  /** Connection mode */
+  mode: "crosstrade" | "custom_bridge";
 }
-
-// ─── Desktop Bridge Interface (future) ───────────────────────
-// When desktop_bridge mode is implemented, the bridge app would:
-// 1. Run as a local service on the user's machine
-// 2. Expose a REST API on localhost
-// 3. Translate commands to NinjaTrader's internal API
-// 4. Forward account/position/order state back
-
-interface BridgeCommand {
-  action: "place_order" | "cancel_order" | "get_state" | "flatten";
-  payload: Record<string, unknown>;
-}
-
-interface BridgeResponse {
-  success: boolean;
-  data?: unknown;
-  error?: string;
-}
-
-// Exported for future bridge implementation
-export type { BridgeCommand, BridgeResponse };
 
 // ─── Adapter ─────────────────────────────────────────────────
 
@@ -76,35 +62,16 @@ export class NinjaTraderAdapter implements ExecutionProviderAdapter {
   constructor(credentials: NinjaTraderCredentials) {
     this.credentials = credentials;
     const host = credentials.host || "localhost";
-    const port = credentials.port || DEFAULT_ATI_PORT;
+    const port = credentials.port || DEFAULT_BRIDGE_PORT;
     this.baseUrl = `http://${host}:${port}`;
-
-    if (credentials.mode === "desktop_bridge") {
-      log.execution.info(
-        "NinjaTrader desktop_bridge mode selected — bridge integration pending"
-      );
-    }
   }
 
-  // ── Mode check ───────────────────────────────────────────
+  // ── HTTP helper ──────────────────────────────────────────
 
-  private assertNativeMode(): void {
-    if (this.credentials.mode === "desktop_bridge") {
-      throw new Error(
-        "NinjaTrader desktop_bridge mode not yet implemented. " +
-        "Use native_api mode with NinjaTrader ATI enabled."
-      );
-    }
-  }
-
-  // ── HTTP helpers (ATI) ───────────────────────────────────
-
-  private async atiFetch<T>(
+  private async apiFetch<T>(
     path: string,
     init: RequestInit = {}
   ): Promise<T> {
-    this.assertNativeMode();
-
     let lastErr: Error | null = null;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -113,18 +80,20 @@ export class NinjaTraderAdapter implements ExecutionProviderAdapter {
           "Content-Type": "application/json",
           Accept: "application/json",
         };
+
         if (this.credentials.apiKey) {
-          headers["X-API-Key"] = this.credentials.apiKey;
+          headers["Authorization"] = `Bearer ${this.credentials.apiKey}`;
         }
 
         const res = await fetch(`${this.baseUrl}${path}`, {
           ...init,
-          headers: { ...headers, ...(init.headers ?? {}) },
+          headers: { ...headers, ...(init.headers as Record<string, string> ?? {}) },
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         });
 
         if (!res.ok) {
-          const body = await res.text();
-          throw new Error(`NinjaTrader ATI ${res.status}: ${body}`);
+          const body = await res.text().catch(() => "");
+          throw new Error(`NinjaTrader bridge ${res.status}: ${body.slice(0, 200)}`);
         }
 
         const data = await res.json();
@@ -134,18 +103,6 @@ export class NinjaTraderAdapter implements ExecutionProviderAdapter {
       } catch (err) {
         lastErr = err instanceof Error ? err : new Error(String(err));
         this.consecutiveFailures++;
-
-        // Connection refused = NinjaTrader not running
-        if (
-          lastErr.message.includes("ECONNREFUSED") ||
-          lastErr.message.includes("fetch failed")
-        ) {
-          throw new Error(
-            "Cannot connect to NinjaTrader ATI. " +
-            "Ensure NinjaTrader is running with ATI enabled on " +
-            `${this.credentials.host}:${this.credentials.port}`
-          );
-        }
 
         if (attempt < MAX_RETRIES) {
           await sleep(RETRY_DELAY_MS * (attempt + 1));
@@ -159,26 +116,28 @@ export class NinjaTraderAdapter implements ExecutionProviderAdapter {
   // ── Adapter interface ────────────────────────────────────
 
   async connect(): Promise<{ ok: boolean; message: string }> {
-    if (this.credentials.mode === "desktop_bridge") {
+    try {
+      // Test connection by hitting health/status endpoint
+      const data = await this.apiFetch<{ status?: string; connected?: boolean }>(
+        "/api/status"
+      );
+
+      this.connected = data.connected !== false;
+
+      if (this.connected) {
+        log.execution.info(`NinjaTrader bridge connected at ${this.baseUrl}`);
+        return { ok: true, message: `Connected to NinjaTrader bridge (${this.credentials.mode})` };
+      } else {
+        return { ok: false, message: "Bridge reachable but NinjaTrader not connected" };
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      log.execution.error(`NinjaTrader connect failed: ${msg}`);
       return {
         ok: false,
-        message:
-          "Desktop bridge mode not yet implemented. Use native_api mode.",
+        message: `Cannot reach NinjaTrader bridge at ${this.baseUrl}. ` +
+          "Ensure NinjaTrader 8 desktop is running with the bridge add-on enabled.",
       };
-    }
-
-    try {
-      // ATI health check — attempt to get accounts
-      await this.atiFetch("/accounts");
-      this.connected = true;
-      return {
-        ok: true,
-        message: `Connected to NinjaTrader ATI at ${this.baseUrl}`,
-      };
-    } catch (err) {
-      this.connected = false;
-      const msg = err instanceof Error ? err.message : "Unknown error";
-      return { ok: false, message: msg };
     }
   }
 
@@ -187,18 +146,19 @@ export class NinjaTraderAdapter implements ExecutionProviderAdapter {
   }
 
   async getAccounts(): Promise<NormalizedAccount[]> {
-    const accounts = await this.atiFetch<NtAccount[]>("/accounts");
+    const data = await this.apiFetch<NtAccount[]>("/api/accounts");
+    const accounts = Array.isArray(data) ? data : [];
 
     return accounts.map((a) => ({
-      id: String(a.accountId ?? a.id ?? "NT-001"),
-      name: a.name ?? a.displayName ?? "NinjaTrader Account",
+      id: String(a.id ?? a.accountName ?? "NT-001"),
+      name: a.accountName ?? a.name ?? "NinjaTrader Account",
       provider: "ninjatrader" as const,
-      balance: a.cashValue ?? 0,
-      cashBalance: a.cashValue ?? 0,
+      balance: a.cashValue ?? a.balance ?? 0,
+      cashBalance: a.cashValue ?? a.balance ?? 0,
       marginUsed: a.initialMargin ?? 0,
       realizedPnl: a.realizedPnl ?? 0,
       unrealizedPnl: a.unrealizedPnl ?? 0,
-      netLiq: a.netLiq ?? a.cashValue ?? 0,
+      netLiq: a.netLiquidation ?? a.cashValue ?? 0,
       currency: "USD",
       environment: "production" as const,
     }));
@@ -206,23 +166,17 @@ export class NinjaTraderAdapter implements ExecutionProviderAdapter {
 
   async getPositions(accountId?: string): Promise<NormalizedPosition[]> {
     const params = accountId ? `?accountId=${accountId}` : "";
-    const positions = await this.atiFetch<NtPosition[]>(
-      `/positions${params}`
-    );
+    const data = await this.apiFetch<NtPosition[]>(`/api/positions${params}`);
+    const positions = Array.isArray(data) ? data : [];
 
     return positions
       .filter((p) => p.quantity !== 0)
       .map((p) => ({
         id: String(p.id ?? `${p.instrument}-${p.accountId}`),
         provider: "ninjatrader" as const,
-        accountId: String(p.accountId ?? accountId ?? "NT-001"),
+        accountId: String(p.accountId ?? accountId ?? ""),
         instrument: p.instrument ?? "NQ",
-        side:
-          p.quantity > 0
-            ? ("long" as const)
-            : p.quantity < 0
-              ? ("short" as const)
-              : ("flat" as const),
+        side: p.quantity > 0 ? "long" as const : p.quantity < 0 ? "short" as const : "flat" as const,
         quantity: Math.abs(p.quantity),
         avgPrice: p.averagePrice ?? 0,
         currentPrice: p.lastPrice ?? p.averagePrice ?? 0,
@@ -234,35 +188,29 @@ export class NinjaTraderAdapter implements ExecutionProviderAdapter {
 
   async getOpenOrders(accountId?: string): Promise<NormalizedOrder[]> {
     const params = accountId ? `?accountId=${accountId}` : "";
-    const orders = await this.atiFetch<NtOrder[]>(`/orders${params}`);
+    const data = await this.apiFetch<NtOrder[]>(`/api/orders${params}`);
+    const orders = Array.isArray(data) ? data : [];
 
     return orders
-      .filter(
-        (o) =>
-          o.orderState === "Working" ||
-          o.orderState === "Accepted" ||
-          o.orderState === "PendingSubmit"
-      )
+      .filter((o) => o.orderState === "Working" || o.orderState === "Accepted" || o.orderState === "PendingSubmit")
       .map(mapNtOrder);
   }
 
-  async placeOrder(
-    request: OrderRequest,
-    accountId: string
-  ): Promise<NormalizedOrder> {
+  async placeOrder(request: OrderRequest, accountId: string): Promise<NormalizedOrder> {
     const body = {
       accountId,
       instrument: request.instrument,
       action: request.side === "buy" ? "Buy" : "Sell",
       orderType: mapNtOrderType(request.type),
       quantity: request.quantity,
-      limitPrice: request.price,
-      stopPrice: request.stopPrice,
+      limitPrice: request.type === "limit" || request.type === "stop_limit" ? request.price : undefined,
+      stopPrice: request.type === "stop" || request.type === "stop_limit" ? request.stopPrice : undefined,
+      timeInForce: "Day",
     };
 
     log.execution.info(`NinjaTrader placeOrder: ${JSON.stringify(body)}`);
 
-    const result = await this.atiFetch<NtOrder>("/orders", {
+    const result = await this.apiFetch<NtOrder>("/api/orders", {
       method: "POST",
       body: JSON.stringify(body),
     });
@@ -270,13 +218,9 @@ export class NinjaTraderAdapter implements ExecutionProviderAdapter {
     return mapNtOrder(result);
   }
 
-  async cancelOrder(
-    orderId: string
-  ): Promise<{ ok: boolean; message: string }> {
+  async cancelOrder(orderId: string): Promise<{ ok: boolean; message: string }> {
     try {
-      await this.atiFetch(`/orders/${orderId}/cancel`, {
-        method: "POST",
-      });
+      await this.apiFetch(`/api/orders/${orderId}/cancel`, { method: "POST" });
       return { ok: true, message: `Order ${orderId} cancelled` };
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown";
@@ -284,24 +228,18 @@ export class NinjaTraderAdapter implements ExecutionProviderAdapter {
     }
   }
 
-  async flattenPosition(
-    instrument: string,
-    accountId: string
-  ): Promise<NormalizedOrder> {
-    // Try ATI flatten command first
+  async flattenPosition(instrument: string, accountId: string): Promise<NormalizedOrder> {
+    // Try bridge's flatten endpoint first
     try {
-      const result = await this.atiFetch<NtOrder>(
-        `/positions/flatten`,
-        {
-          method: "POST",
-          body: JSON.stringify({ accountId, instrument }),
-        }
-      );
+      const result = await this.apiFetch<NtOrder>("/api/positions/flatten", {
+        method: "POST",
+        body: JSON.stringify({ accountId, instrument }),
+      });
       return mapNtOrder(result);
     } catch {
-      // Fallback: manual flatten via opposing market order
+      // Fallback: manual close
       const positions = await this.getPositions(accountId);
-      const pos = positions.find((p) => p.instrument === instrument);
+      const pos = positions.find((p) => p.instrument.includes(instrument));
 
       if (!pos || pos.side === "flat") {
         throw new Error(`No open position for ${instrument}`);
@@ -322,21 +260,15 @@ export class NinjaTraderAdapter implements ExecutionProviderAdapter {
   async getHealth(): Promise<ProviderHealth> {
     return {
       provider: "ninjatrader",
-      status: this.connected
-        ? "healthy"
-        : this.consecutiveFailures > 0
-          ? "degraded"
-          : "unknown",
+      status: this.connected ? "healthy" : this.consecutiveFailures > 0 ? "degraded" : "unknown",
       connected: this.connected,
       lastSuccessfulConnection: this.lastSuccessAt,
-      lastSuccessfulAuthRefresh: null, // ATI doesn't use tokens
+      lastSuccessfulAuthRefresh: null,
       latencyMs: null,
       consecutiveFailures: this.consecutiveFailures,
       message: this.connected
-        ? `Connected to ATI at ${this.baseUrl} (${this.credentials.mode})`
-        : this.credentials.mode === "desktop_bridge"
-          ? "Desktop bridge mode — not yet implemented"
-          : `Not connected to ATI at ${this.baseUrl}`,
+        ? `Bridge connected (${this.credentials.mode})`
+        : "Not connected — ensure NinjaTrader 8 desktop is running with bridge enabled",
     };
   }
 }
@@ -344,19 +276,19 @@ export class NinjaTraderAdapter implements ExecutionProviderAdapter {
 // ─── NinjaTrader type mappings ───────────────────────────────
 
 interface NtAccount {
-  id?: number;
-  accountId?: string;
+  id?: string;
+  accountName?: string;
   name?: string;
-  displayName?: string;
   cashValue?: number;
+  balance?: number;
   initialMargin?: number;
   realizedPnl?: number;
   unrealizedPnl?: number;
-  netLiq?: number;
+  netLiquidation?: number;
 }
 
 interface NtPosition {
-  id?: number;
+  id?: string;
   accountId?: string;
   instrument?: string;
   quantity: number;
@@ -369,27 +301,27 @@ interface NtPosition {
 
 interface NtOrder {
   orderId?: string;
-  id?: number;
+  id?: string;
   accountId?: string;
   instrument?: string;
-  action?: string; // "Buy" | "Sell"
-  orderType?: string; // "Market" | "Limit" | "StopMarket" | "StopLimit"
+  action?: string;       // "Buy" | "Sell"
+  orderType?: string;    // "Market" | "Limit" | "StopMarket" | "StopLimit"
   quantity?: number;
-  limitPrice?: number | null;
-  stopPrice?: number | null;
+  limitPrice?: number;
+  stopPrice?: number;
   filledQuantity?: number;
-  averageFillPrice?: number | null;
-  orderState?: string;
+  averageFillPrice?: number;
+  orderState?: string;   // "Working" | "Filled" | "Cancelled" | "Rejected" | etc.
   time?: string;
 }
 
 function mapNtOrder(o: NtOrder): NormalizedOrder {
   return {
-    id: String(o.orderId ?? o.id ?? 0),
+    id: String(o.orderId ?? o.id ?? crypto.randomUUID()),
     provider: "ninjatrader",
-    providerOrderId: String(o.orderId ?? o.id ?? 0),
+    providerOrderId: String(o.orderId ?? o.id ?? ""),
     idempotencyKey: String(o.orderId ?? o.id ?? crypto.randomUUID()),
-    accountId: o.accountId ?? "NT-001",
+    accountId: String(o.accountId ?? ""),
     instrument: o.instrument ?? "NQ",
     side: o.action === "Buy" ? "buy" : "sell",
     type: reverseNtOrderType(o.orderType ?? "Market"),
@@ -398,7 +330,7 @@ function mapNtOrder(o: NtOrder): NormalizedOrder {
     stopPrice: o.stopPrice ?? null,
     filledQuantity: o.filledQuantity ?? 0,
     avgFillPrice: o.averageFillPrice ?? null,
-    status: mapNtStatus(o.orderState ?? "Unknown"),
+    status: mapNtStatus(o.orderState ?? ""),
     createdAt: o.time ?? new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
@@ -426,14 +358,15 @@ function reverseNtOrderType(ntType: string): NormalizedOrder["type"] {
 
 function mapNtStatus(state: string): OrderStatus {
   const map: Record<string, OrderStatus> = {
-    PendingSubmit: "pending",
-    Accepted: "working",
+    Accepted: "pending",
     Working: "working",
+    PendingSubmit: "pending",
+    PendingChange: "working",
+    PendingCancel: "working",
     Filled: "filled",
     PartFilled: "partially_filled",
     Cancelled: "cancelled",
     Rejected: "rejected",
-    Unknown: "pending",
   };
   return map[state] ?? "pending";
 }

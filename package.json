@@ -9,8 +9,6 @@
     "lint": "next lint",
     "db:migrate": "npx tsx src/lib/db/migrate.ts",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
@@ -23,6 +21,7 @@
     "lightweight-charts": "^4.2.3",
     "lucide-react": "^1.7.0",
     "next": "14.2.35",
+    "protobufjs": "^8.0.0",
     "react": "^18",
     "react-dom": "^18",
     "tailwind-merge": "^3.5.0",

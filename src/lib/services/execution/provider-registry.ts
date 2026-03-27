@@ -3,7 +3,10 @@ import { getRawCredentials } from "@/lib/services/connections";
 import { MockExecutionAdapter } from "./adapter-mock";
 import { TradovateAdapter } from "./adapter-tradovate";
 import { TopstepXAdapter } from "./adapter-topstepx";
+import { RithmicAdapter } from "./adapter-rithmic";
 import { NinjaTraderAdapter } from "./adapter-ninjatrader";
+
+const DEFAULT_NT_PORT = 8080;
 import type {
   ExecutionProvider,
   ExecutionProviderAdapter,
@@ -98,28 +101,33 @@ async function doInit(): Promise<void> {
     // No TopstepX credentials
   }
 
-  // Rithmic — placeholder (mock for now)
+  // Rithmic — real R|Protocol WebSocket adapter
   try {
     const creds = await getRawCredentials("rithmic");
     if (creds?.username && creds?.password) {
-      registerAdapter(new MockExecutionAdapter("rithmic"));
-      log.execution.info(
-        "Rithmic: credentials found, mock adapter registered (real adapter pending R|Protocol integration)"
-      );
+      const adapter = new RithmicAdapter({
+        username: String(creds.username),
+        password: String(creds.password),
+        systemName: String(creds.systemName || "Rithmic Paper Trading"),
+        gateway: (creds.gateway as "paper-chicago" | "prod-chicago") ?? "paper-chicago",
+        appName: creds.appName ? String(creds.appName) : undefined,
+      });
+      registerAdapter(adapter);
+      log.execution.info("Rithmic adapter initialized from stored credentials");
     }
   } catch {
     // No Rithmic credentials
   }
 
-  // NinjaTrader
+  // NinjaTrader — REST bridge adapter (requires NT8 desktop + bridge add-on)
   try {
     const creds = await getRawCredentials("ninjatrader");
     if (creds?.host || creds?.apiKey) {
       const adapter = new NinjaTraderAdapter({
         host: String(creds.host || "localhost"),
-        port: Number(creds.port) || 36973,
+        port: Number(creds.port) || DEFAULT_NT_PORT,
         apiKey: creds.apiKey ? String(creds.apiKey) : undefined,
-        mode: (creds.mode as "native_api" | "desktop_bridge") ?? "native_api",
+        mode: (creds.mode as "crosstrade" | "custom_bridge") ?? "crosstrade",
       });
       registerAdapter(adapter);
       log.execution.info("NinjaTrader adapter initialized from stored credentials");
