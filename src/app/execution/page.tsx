@@ -16,9 +16,11 @@ import { PositionsTable } from "@/components/execution/positions-table";
 import { OrdersTable } from "@/components/execution/orders-table";
 import { ModeSelector } from "@/components/execution/mode-selector";
 import { OrderQueue } from "@/components/execution/order-queue";
+import { RiskPanel } from "@/components/execution/risk-panel";
 
 export default function ExecutionPage() {
   const [state, setState] = useState<UnifiedExecutionState | null>(null);
+  const [riskStatus, setRiskStatus] = useState<Record<string, unknown> | null>(null);
   const [queueOrders, setQueueOrders] = useState<ProposedOrder[]>([]);
   const [queueStats, setQueueStats] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -30,15 +32,20 @@ export default function ExecutionPage() {
 
   const fetchState = useCallback(async () => {
     try {
-      const [stateRes, queueRes] = await Promise.all([
+      const [stateRes, queueRes, riskRes] = await Promise.all([
         fetch("/api/execution"),
         fetch("/api/execution/queue"),
+        fetch("/api/execution/risk"),
       ]);
       if (stateRes.ok) setState(await stateRes.json());
       if (queueRes.ok) {
         const q = await queueRes.json();
         setQueueOrders(q.queue ?? []);
         setQueueStats(q.stats ?? {});
+      }
+      if (riskRes.ok) {
+        const r = await riskRes.json();
+        setRiskStatus(r.status ?? null);
       }
     } catch (err) {
       console.error("Failed to fetch execution state:", err);
@@ -73,6 +80,18 @@ export default function ExecutionPage() {
     } finally {
       setTesting(false);
     }
+  };
+
+  const handleRiskAction = async (
+    action: string,
+    payload?: Record<string, string>
+  ) => {
+    await fetch("/api/execution/risk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, ...payload }),
+    });
+    await fetchState();
   };
 
   const handleQueueAction = async (
@@ -186,7 +205,13 @@ export default function ExecutionPage() {
             <AccountPanel account={state?.accounts[0] ?? null} />
           </div>
 
-          {/* Row 2: Approval Queue */}
+          {/* Row 2: Risk Control */}
+          <RiskPanel
+            status={riskStatus as React.ComponentProps<typeof RiskPanel>["status"]}
+            onAction={handleRiskAction}
+          />
+
+          {/* Row 3: Approval Queue */}
           <OrderQueue orders={queueOrders} onAction={handleQueueAction} />
 
           {/* Row 3: Live Positions */}

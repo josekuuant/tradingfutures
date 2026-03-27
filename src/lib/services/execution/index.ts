@@ -6,6 +6,10 @@ import {
   ensureAdaptersInitialized,
 } from "./provider-registry";
 import {
+  checkRiskControls,
+  anomaly,
+} from "./risk-control";
+import {
   runGuardrails,
   recordIdempotencyKey,
   recordOrderTimestamp,
@@ -175,6 +179,28 @@ export async function placeOrder(
     request.idempotencyKey = crypto.randomUUID();
   }
 
+  // ── Risk control check (runs BEFORE mode gates) ────────────
+
+  if (target) {
+    const riskCheck = checkRiskControls(target, request.instrument);
+    if (!riskCheck.allowed) {
+      log.execution.error(`Risk control blocked: ${riskCheck.reason}`);
+      return {
+        success: false,
+        error: riskCheck.reason,
+        errorCode: "CIRCUIT_BREAKER",
+      };
+    }
+    if (riskCheck.forceSafeMode) {
+      log.execution.warn("Risk control forcing safe mode — manual approval required");
+      return {
+        success: false,
+        requiresApproval: true,
+        error: `Safe mode: ${riskCheck.reason}`,
+      };
+    }
+  }
+
   // ── Mode gates ─────────────────────────────────────────────
 
   if (executionMode === "disabled") {
@@ -263,6 +289,12 @@ export async function placeOrder(
   );
 
   if (!guardrailResult.passed) {
+    // Record anomaly for rejection tracking
+    if (guardrailResult.errorCode === "DUPLICATE_ORDER") {
+      anomaly.duplicateExecution(request.instrument, guardrailResult.error ?? "");
+    } else {
+      anomaly.rejection(target, guardrailResult.error ?? "Guardrail rejected");
+    }
     return {
       success: false,
       error: guardrailResult.error,
@@ -335,6 +367,13 @@ export async function placeOrder(
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     recordFailure(target, guardrails.circuitBreakerThreshold);
+    anomaly.rejection(target, `Provider error: ${msg}`);
+
+    // Check if auth-related
+    if (msg.includes("401") || msg.includes("auth") || msg.includes("token")) {
+      anomaly.authFailure(target, msg);
+    }
+
     log.execution.error(`Order failed via ${target}: ${msg}`);
     return {
       success: false,
@@ -418,3 +457,16 @@ export async function flattenPosition(
 
 export { ensureAdaptersInitialized } from "./provider-registry";
 export { registerAdapter, getAdapter as getProviderAdapter } from "./provider-registry";
+
+// Risk control
+export {
+  getRiskControlStatus,
+  getActiveKillSwitches,
+  getLockdownHistory,
+  activateKillSwitch,
+  deactivateKillSwitch,
+  deactivateAllKillSwitches,
+  getRiskConfig,
+  updateRiskConfig,
+  checkRiskControls,
+} from "./risk-control";
