@@ -147,6 +147,10 @@ export default function BacktestsPage() {
     setRunError(null);
 
     const MAX_ITERATIONS = 5;
+    let prevWinRate: number | null = null;
+    let prevProfitFactor: number | null = null;
+    const allChanges: string[] = [];
+    let degradationCount = 0;
 
     for (let i = 0; i < MAX_ITERATIONS; i++) {
       // 1. Run backtest
@@ -170,9 +174,10 @@ export default function BacktestsPage() {
       setExpandedId(run.id);
       await fetchData();
 
-      // 2. Check if already profitable
       const wr = run.results.winRate;
       const pf = run.results.profitFactor;
+
+      // 2. Check if already profitable
       if (wr != null && wr >= 0.55 && pf != null && pf >= 1.5) {
         setOptimizationLog((prev) => [...prev, {
           analysis: `Strategy is profitable (${(wr * 100).toFixed(0)}% WR, ${pf.toFixed(1)} PF). No further optimization needed.`,
@@ -186,15 +191,67 @@ export default function BacktestsPage() {
         break;
       }
 
-      // 3. Ask Claude to optimize (auto-apply changes)
+      // 3. Check for degradation — if results got worse 2x in a row, stop
+      if (i > 0 && prevWinRate != null && wr != null && wr < prevWinRate - 0.05) {
+        degradationCount++;
+        if (degradationCount >= 2) {
+          setOptimizationLog((prev) => [...prev, {
+            analysis: `Results degraded for 2 consecutive rounds (${(prevWinRate! * 100).toFixed(0)}% → ${(wr * 100).toFixed(0)}% WR). Stopping to prevent further damage.`,
+            changes: {},
+            changesSummary: ["Auto-optimize stopped — manual review recommended"],
+            isOptimal: false,
+            confidenceInChanges: 0,
+            recommendation: "Review the strategy manually. The auto-optimizer reached its limit.",
+            applied: false,
+          }]);
+          break;
+        }
+      } else {
+        degradationCount = 0;
+      }
+
+      // 4. Ask Claude to optimize (auto-apply changes)
       setOptimizing(true);
-      const opt = await handleOptimize(run, true);
-      setOptimizing(false);
+      try {
+        const res = await fetch("/api/backtests/optimize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            strategyId: run.config.strategyId,
+            promptId: run.config.promptId,
+            results: run.results,
+            iteration: i + 1,
+            autoApply: true,
+            previousResults: prevWinRate != null ? { winRate: prevWinRate, profitFactor: prevProfitFactor } : undefined,
+            previousChanges: allChanges.length > 0 ? allChanges : undefined,
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error ?? "Optimization failed");
+        }
+        const opt: OptimizationResult = await res.json();
+        setOptimizationLog((prev) => [...prev, opt]);
 
-      if (!opt || opt.isOptimal) break;
+        // Track changes for next iteration
+        if (opt.changesSummary) {
+          allChanges.push(...opt.changesSummary);
+        }
 
-      // Small delay between iterations
-      await new Promise((r) => setTimeout(r, 1000));
+        if (opt.isOptimal) break;
+      } catch (err) {
+        setRunError(err instanceof Error ? err.message : "Optimization failed");
+        break;
+      } finally {
+        setOptimizing(false);
+      }
+
+      // Track previous results for comparison
+      prevWinRate = wr;
+      prevProfitFactor = pf;
+
+      // Delay between iterations (avoid API spam)
+      await new Promise((r) => setTimeout(r, 2000));
     }
 
     await fetchData();

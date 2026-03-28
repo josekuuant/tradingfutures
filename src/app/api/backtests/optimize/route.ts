@@ -44,9 +44,20 @@ RULES:
 - Only include fields that need changing in "changes"
 - strategy fields: contextConditions, entryConditions, invalidation, tp1, tp2, minRR, volatilityFilter, volumeFilter, scheduleFilter, newsFilter, noTradeRules
 - prompt fields: userPromptTemplate
-- Set isOptimal=true if results are already good enough
+- Set isOptimal=true if results are already good enough (win rate > 55%, profit factor > 1.5)
 - confidenceInChanges: 0-1 how confident you are the changes will improve results
-- Be specific in changesSummary — no vague statements`;
+- Be specific in changesSummary — no vague statements
+
+CRITICAL CONSTRAINTS:
+- Make ONE or TWO targeted changes per iteration, not five. Small steps.
+- Never rewrite the entire entryConditions or prompt — modify specific parts.
+- If iteration > 1, you will see previous changes. Do NOT undo them unless they clearly made things worse.
+- If win rate dropped vs previous iteration, REVERT the last change and try something different.
+- Always prioritize SAFETY over profitability. A strategy with 50% win rate and 1:3 RR is better than 70% win rate with 1:0.5 RR.
+- After 3 iterations with no improvement, set isOptimal=true and recommend manual review.
+- Never lower minRR below 1.5
+- Never remove noTradeRules — only add to them
+- Never widen stops — only tighten entries or improve context filters`;
 
 export async function POST(req: NextRequest) {
   try {
@@ -57,12 +68,16 @@ export async function POST(req: NextRequest) {
       results,
       iteration,
       autoApply,
+      previousResults,
+      previousChanges,
     } = body as {
       strategyId: string;
       promptId: string;
       results: BacktestResults;
       iteration: number;
       autoApply: boolean;
+      previousResults?: { winRate: number | null; profitFactor: number | null };
+      previousChanges?: string[];
     };
 
     if (!strategyId || !promptId || !results) {
@@ -119,7 +134,17 @@ BACKTEST RESULTS:
 - BUY count: ${results.buyCount}
 - SELL count: ${results.sellCount}
 
-Analyze these results and propose specific improvements to make the strategy more profitable and safer.`;
+${previousResults ? `
+PREVIOUS ITERATION RESULTS:
+- Win Rate: ${previousResults.winRate != null ? (previousResults.winRate * 100).toFixed(1) + "%" : "N/A"}
+- Profit Factor: ${previousResults.profitFactor ?? "N/A"}
+` : ""}
+${previousChanges && previousChanges.length > 0 ? `
+CHANGES ALREADY MADE IN PREVIOUS ITERATIONS:
+${previousChanges.map((c, i) => `${i + 1}. ${c}`).join("\n")}
+Do NOT undo these unless they clearly made results worse.
+` : ""}
+Analyze these results and propose specific improvements. Remember: small targeted changes only, prioritize safety.`;
 
     const response = await client.messages.create({
       model: (creds.model as string) || "claude-sonnet-4-6",
@@ -142,8 +167,9 @@ Analyze these results and propose specific improvements to make the strategy mor
 
     const optimization = JSON.parse(jsonStr);
 
-    // Auto-apply changes if requested and Claude is confident
-    if (autoApply && !optimization.isOptimal && optimization.confidenceInChanges >= 0.5) {
+    // Auto-apply changes if requested and Claude is confident enough
+    // Threshold: 60% confidence minimum to auto-apply
+    if (autoApply && !optimization.isOptimal && optimization.confidenceInChanges >= 0.6) {
       if (optimization.changes?.strategy) {
         await updateStrategy(strategyId, optimization.changes.strategy);
         log.engine.info("Auto-applied strategy changes", {
