@@ -24,6 +24,7 @@ export default function ExecutionPage() {
   const [queueOrders, setQueueOrders] = useState<ProposedOrder[]>([]);
   const [queueStats, setQueueStats] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{
     ok: boolean;
@@ -47,8 +48,8 @@ export default function ExecutionPage() {
         const r = await riskRes.json();
         setRiskStatus(r.status ?? null);
       }
-    } catch (err) {
-      console.error("Failed to fetch execution state:", err);
+    } catch {
+      setFetchError("Failed to load execution state");
     } finally {
       setLoading(false);
     }
@@ -191,6 +192,14 @@ export default function ExecutionPage() {
           </button>
         </div>
       </div>
+
+      {/* Fetch error */}
+      {fetchError && (
+        <div className="rounded-md bg-danger/10 px-4 py-3 text-sm text-danger">
+          {fetchError}
+          <button onClick={() => { setFetchError(null); fetchState(); }} className="ml-2 underline">Retry</button>
+        </div>
+      )}
 
       {/* Test result */}
       {testResult && (

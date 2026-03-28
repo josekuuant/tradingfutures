@@ -21,6 +21,7 @@ export default function BacktestsPage() {
   const [strategies, setStrategies] = useState<Strategy[]>([]);
   const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -50,8 +51,8 @@ export default function BacktestsPage() {
         setPrompts(p);
         setPromptId((prev) => (prev || (p.length > 0 ? p[0].id : "")));
       }
-    } catch (err) {
-      console.error("Failed to fetch:", err);
+    } catch {
+      setFetchError("Failed to load backtests data");
     } finally {
       setLoading(false);
     }
@@ -212,10 +213,12 @@ export default function BacktestsPage() {
       </div>
 
       {/* Error display */}
-      {runError && (
+      {(fetchError || runError) && (
         <div className="rounded-md bg-danger/10 px-4 py-3 text-sm text-danger">
-          {runError}
-          <button onClick={() => setRunError(null)} className="ml-2 underline">Dismiss</button>
+          {fetchError || runError}
+          <button onClick={() => { setFetchError(null); setRunError(null); fetchData(); }} className="ml-2 underline">
+            {fetchError ? "Retry" : "Dismiss"}
+          </button>
         </div>
       )}
 
