@@ -79,44 +79,49 @@ export class DatabentoAdapter implements MarketDataAdapter {
 
   async getQuote(instrument: Instrument): Promise<RawQuote> {
     const symbol = toSymbol(instrument);
-    const now = new Date();
-    // Request last 5 seconds of top-of-book data
-    const start = new Date(now.getTime() - 5000).toISOString();
-    const end = now.toISOString();
 
-    const data = await this.request("/timeseries.get_range", {
-      dataset: DATASET,
-      symbols: symbol,
-      schema: "mbp-1",
-      start,
-      end,
-      limit: 1,
-      encoding: "json",
-      stype_in: "continuous",
-    });
+    // Try progressively wider windows to handle market-closed scenarios.
+    // NQ trades Sun 6pm - Fri 5pm ET. On weekends/holidays, we need
+    // to look back to the last available data.
+    const windows = [
+      5_000,        // 5 seconds (live market)
+      60_000,       // 1 minute
+      3_600_000,    // 1 hour
+      86_400_000,   // 1 day (covers overnight gap)
+      259_200_000,  // 3 days (covers weekends)
+    ];
 
-    if (!data || data.length === 0) {
-      // Fallback: try a wider window
-      const widerStart = new Date(now.getTime() - 60_000).toISOString();
-      const fallback = await this.request("/timeseries.get_range", {
-        dataset: DATASET,
-        symbols: symbol,
-        schema: "mbp-1",
-        start: widerStart,
-        end,
-        limit: 1,
-        encoding: "json",
-        stype_in: "continuous",
-      });
+    for (const windowMs of windows) {
+      const end = new Date();
+      const start = new Date(end.getTime() - windowMs);
 
-      if (!fallback || fallback.length === 0) {
-        throw new Error(`No quote data for ${instrument}`);
+      try {
+        const data = await this.request("/timeseries.get_range", {
+          dataset: DATASET,
+          symbols: symbol,
+          schema: "mbp-1",
+          start: start.toISOString(),
+          end: end.toISOString(),
+          limit: 1,
+          encoding: "json",
+          stype_in: "continuous",
+        });
+
+        if (data && data.length > 0) {
+          return this.parseQuote(data[data.length - 1], instrument);
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "";
+        // If Databento says our time range is after available data,
+        // try a wider window. Otherwise, re-throw.
+        if (msg.includes("data_end_after_available_end") || msg.includes("data_start_after_available_end")) {
+          continue; // try wider window
+        }
+        throw err;
       }
-
-      return this.parseQuote(fallback[fallback.length - 1], instrument);
     }
 
-    return this.parseQuote(data[data.length - 1], instrument);
+    throw new Error(`No quote data for ${instrument} (market may be closed)`);
   }
 
   private parseQuote(record: DatabentoMbp1, instrument: Instrument): RawQuote {
@@ -156,22 +161,51 @@ export class DatabentoAdapter implements MarketDataAdapter {
     const multiplier = candleMultiplier(timeframe);
     const fetchLimit = limit * multiplier;
 
-    // Calculate time window
+    // Calculate time window — use wider window to handle market closures
     const now = new Date();
     const tfMinutes = timeframeToMinutes(timeframe);
-    const windowMs = fetchLimit * tfMinutes * 60_000 * 1.2; // 20% buffer
-    const start = new Date(now.getTime() - windowMs).toISOString();
+    const baseWindowMs = fetchLimit * tfMinutes * 60_000 * 1.2;
+    // On weekends, we need to look back further (up to 3 extra days)
+    const extraBufferMs = 3 * 86_400_000;
+    const start = new Date(now.getTime() - baseWindowMs - extraBufferMs);
 
-    const data = await this.request("/timeseries.get_range", {
-      dataset: DATASET,
-      symbols: symbol,
-      schema,
-      start,
-      end: now.toISOString(),
-      limit: fetchLimit,
-      encoding: "json",
-      stype_in: "continuous",
-    });
+    let data: DatabentoRecord[] = [];
+    try {
+      data = await this.request("/timeseries.get_range", {
+        dataset: DATASET,
+        symbols: symbol,
+        schema,
+        start: start.toISOString(),
+        end: now.toISOString(),
+        limit: fetchLimit,
+        encoding: "json",
+        stype_in: "continuous",
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      // If time range is after available data, try without end param
+      if (msg.includes("data_end_after_available_end") || msg.includes("data_start_after_available_end")) {
+        try {
+          // Request the most recent available data without specifying end
+          const safeEnd = new Date(now.getTime() - 86_400_000); // 1 day ago
+          data = await this.request("/timeseries.get_range", {
+            dataset: DATASET,
+            symbols: symbol,
+            schema,
+            start: start.toISOString(),
+            end: safeEnd.toISOString(),
+            limit: fetchLimit,
+            encoding: "json",
+            stype_in: "continuous",
+          });
+        } catch {
+          log.market.warn(`No candle data for ${instrument} ${timeframe} (market closed)`);
+          return [];
+        }
+      } else {
+        throw err;
+      }
+    }
 
     if (!data || data.length === 0) {
       log.market.warn(`No candle data for ${instrument} ${timeframe}`);
