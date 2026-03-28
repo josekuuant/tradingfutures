@@ -159,46 +159,130 @@ export async function testConnection(
 
   try {
     switch (provider) {
-      case "databento":
-        success = Boolean(creds.apiKey && creds.apiKey.length > 0);
+      case "databento": {
+        if (!creds.apiKey) {
+          message = "API key is required.";
+          break;
+        }
+        // Real HTTP call to Databento to verify key
+        const dbRes = await fetch("https://hist.databento.com/v0/metadata.list_datasets", {
+          headers: { Authorization: `Basic ${Buffer.from(creds.apiKey + ":").toString("base64")}` },
+          signal: AbortSignal.timeout(10_000),
+        });
+        success = dbRes.ok;
         message = success
-          ? "Databento credentials validated. Live connection test requires Databento SDK integration."
-          : "Invalid API key.";
+          ? "Databento connected — API key verified"
+          : `Databento auth failed (${dbRes.status}). Check your API key.`;
         break;
+      }
 
-      case "tradovate":
-        success = Boolean(creds.username && creds.password);
-        message = success
-          ? "Tradovate credentials validated. Live connection test requires Tradovate SDK integration."
-          : "Username and password are required.";
+      case "claude": {
+        if (!creds.apiKey || !creds.apiKey.startsWith("sk-ant-")) {
+          message = "Invalid API key format. Expected sk-ant-... prefix.";
+          break;
+        }
+        // Real HTTP call to Claude API to verify key
+        const clRes = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "x-api-key": creds.apiKey,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            model: creds.model || "claude-sonnet-4-6",
+            max_tokens: 1,
+            messages: [{ role: "user", content: "ping" }],
+          }),
+          signal: AbortSignal.timeout(15_000),
+        });
+        success = clRes.ok;
+        if (success) {
+          message = "Claude API connected — key verified";
+        } else if (clRes.status === 401) {
+          message = "Claude API key is invalid or expired.";
+        } else {
+          message = `Claude API error (${clRes.status}). Key may be valid but check billing.`;
+          success = clRes.status === 429; // Rate limited = key is valid
+        }
         break;
+      }
 
-      case "claude":
-        success = Boolean(creds.apiKey && creds.apiKey.startsWith("sk-ant-"));
-        message = success
-          ? "Claude API key format validated. Live test requires Anthropic SDK integration."
-          : "Invalid API key format. Expected sk-ant-... prefix.";
+      case "tradovate": {
+        if (!creds.username || !creds.password) {
+          message = "Username and password are required.";
+          break;
+        }
+        // Real auth call to Tradovate
+        const env = row.environment === "production" ? "live" : "demo";
+        const tvRes = await fetch(`https://${env}.tradovateapi.com/v1/auth/accessTokenRequest`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: creds.username,
+            password: creds.password,
+            appId: creds.appId || "TradingFutures",
+            appVersion: "1.0",
+            cid: creds.cid || undefined,
+            sec: creds.sec || undefined,
+          }),
+          signal: AbortSignal.timeout(15_000),
+        });
+        success = tvRes.ok;
+        if (success) {
+          const tvData = await tvRes.json();
+          message = tvData.accessToken
+            ? `Tradovate connected (${env}) — authenticated as ${creds.username}`
+            : "Tradovate responded but no token received.";
+          success = Boolean(tvData.accessToken);
+        } else {
+          message = `Tradovate auth failed (${tvRes.status}). Check credentials.`;
+        }
         break;
+      }
+
+      case "topstepx": {
+        if (!creds.apiKey || creds.apiKey.length < 10) {
+          message = "Valid API key is required.";
+          break;
+        }
+        // Real auth call to TopstepX
+        const pxEnv = row.environment === "production"
+          ? "https://api.thefuturesdesk.projectx.com"
+          : "https://gateway-api-demo.s2f.projectx.com";
+        const pxRes = await fetch(`${pxEnv}/api/Auth/loginKey`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userName: creds.username || "",
+            apiKey: creds.apiKey,
+          }),
+          signal: AbortSignal.timeout(15_000),
+        });
+        if (pxRes.ok) {
+          const pxData = await pxRes.json();
+          success = Boolean(pxData.token && pxData.success !== false);
+          message = success
+            ? "TopstepX connected — authenticated"
+            : `TopstepX: ${pxData.errorMessage || "Auth failed"}`;
+        } else {
+          message = `TopstepX auth failed (${pxRes.status}).`;
+        }
+        break;
+      }
 
       case "rithmic":
         success = Boolean(creds.username && creds.password);
         message = success
-          ? "Rithmic credentials validated. Live session requires R | Protocol connection."
+          ? "Rithmic credentials saved. Live test requires WebSocket connection (will connect on first use)."
           : "Username and password are required.";
         break;
 
       case "ninjatrader":
         success = Boolean(creds.host || creds.apiKey);
         message = success
-          ? "NinjaTrader configuration validated. ATI bridge connection available."
+          ? "NinjaTrader configuration saved. Ensure NT8 desktop + bridge are running."
           : "Host address or API key is required.";
-        break;
-
-      case "topstepx":
-        success = Boolean(creds.apiKey && creds.apiKey.length > 10);
-        message = success
-          ? "TopstepX API key validated. OAuth token exchange pending."
-          : "Valid API key is required.";
         break;
 
       default:
