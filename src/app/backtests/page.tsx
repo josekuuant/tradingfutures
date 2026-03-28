@@ -11,10 +11,23 @@ import {
   AlertTriangle,
   Trophy,
   TrendingDown,
+  Wand2,
+  Check,
+  ArrowRight,
 } from "lucide-react";
 import type { BacktestRun, BacktestResults } from "@/types/backtest";
 import type { Strategy } from "@/types/strategy";
 import type { Prompt } from "@/types/prompt";
+
+interface OptimizationResult {
+  analysis: string;
+  changes: { strategy?: Record<string, string>; prompt?: Record<string, string> };
+  changesSummary: string[];
+  isOptimal: boolean;
+  confidenceInChanges: number;
+  recommendation: string;
+  applied: boolean;
+}
 
 export default function BacktestsPage() {
   const [runs, setRuns] = useState<BacktestRun[]>([]);
@@ -25,6 +38,9 @@ export default function BacktestsPage() {
   const [running, setRunning] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [optimizing, setOptimizing] = useState(false);
+  const [optimizationLog, setOptimizationLog] = useState<OptimizationResult[]>([]);
+  const [autoOptimizeRunning, setAutoOptimizeRunning] = useState(false);
 
   // Form state
   const [strategyId, setStrategyId] = useState("");
@@ -90,6 +106,99 @@ export default function BacktestsPage() {
     } finally {
       setRunning(false);
     }
+  };
+
+  // ─── Single optimization round ─────────────────────────────
+  const handleOptimize = async (run: BacktestRun, autoApply = false) => {
+    if (!run.results) return;
+    setOptimizing(true);
+    try {
+      const res = await fetch("/api/backtests/optimize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          strategyId: run.config.strategyId,
+          promptId: run.config.promptId,
+          results: run.results,
+          iteration: optimizationLog.length + 1,
+          autoApply,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Optimization failed");
+      }
+      const result: OptimizationResult = await res.json();
+      setOptimizationLog((prev) => [...prev, result]);
+      return result;
+    } catch (err) {
+      setRunError(err instanceof Error ? err.message : "Optimization failed");
+      return null;
+    } finally {
+      setOptimizing(false);
+    }
+  };
+
+  // ─── Auto-optimize loop: backtest → analyze → adjust → repeat ─
+  const handleAutoOptimize = async () => {
+    if (!strategyId || !promptId) return;
+    setAutoOptimizeRunning(true);
+    setOptimizationLog([]);
+    setRunError(null);
+
+    const MAX_ITERATIONS = 5;
+
+    for (let i = 0; i < MAX_ITERATIONS; i++) {
+      // 1. Run backtest
+      setRunning(true);
+      let run: BacktestRun | null = null;
+      try {
+        const res = await fetch("/api/backtests", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ strategyId, promptId, candleCount, windowSize, stepSize }),
+        });
+        if (res.ok) run = await res.json();
+      } catch { /* handled below */ }
+      setRunning(false);
+
+      if (!run?.results) {
+        setRunError(`Iteration ${i + 1}: backtest failed`);
+        break;
+      }
+
+      setExpandedId(run.id);
+      await fetchData();
+
+      // 2. Check if already profitable
+      const wr = run.results.winRate;
+      const pf = run.results.profitFactor;
+      if (wr != null && wr >= 0.55 && pf != null && pf >= 1.5) {
+        setOptimizationLog((prev) => [...prev, {
+          analysis: `Strategy is profitable (${(wr * 100).toFixed(0)}% WR, ${pf.toFixed(1)} PF). No further optimization needed.`,
+          changes: {},
+          changesSummary: ["Strategy meets profitability targets"],
+          isOptimal: true,
+          confidenceInChanges: 1,
+          recommendation: "Strategy is ready for paper trading",
+          applied: false,
+        }]);
+        break;
+      }
+
+      // 3. Ask Claude to optimize (auto-apply changes)
+      setOptimizing(true);
+      const opt = await handleOptimize(run, true);
+      setOptimizing(false);
+
+      if (!opt || opt.isOptimal) break;
+
+      // Small delay between iterations
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+
+    await fetchData();
+    setAutoOptimizeRunning(false);
   };
 
   const inputClass =
@@ -197,18 +306,32 @@ export default function BacktestsPage() {
             ~{Math.floor((candleCount - windowSize) / stepSize)} analysis
             points · requires Claude API
           </p>
-          <button
-            onClick={handleRun}
-            disabled={running || !strategyId || !promptId}
-            className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-          >
-            {running ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Play className="h-3.5 w-3.5" />
-            )}
-            Run Backtest
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleAutoOptimize}
+              disabled={autoOptimizeRunning || running || !strategyId || !promptId}
+              className="inline-flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-4 py-2 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50"
+            >
+              {autoOptimizeRunning ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Wand2 className="h-3.5 w-3.5" />
+              )}
+              {autoOptimizeRunning ? "Optimizing..." : "Auto-Optimize"}
+            </button>
+            <button
+              onClick={handleRun}
+              disabled={running || !strategyId || !promptId}
+              className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {running ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Play className="h-3.5 w-3.5" />
+              )}
+              Run Backtest
+            </button>
+          </div>
         </div>
       </div>
 
@@ -219,6 +342,66 @@ export default function BacktestsPage() {
           <button onClick={() => { setFetchError(null); setRunError(null); fetchData(); }} className="ml-2 underline">
             {fetchError ? "Retry" : "Dismiss"}
           </button>
+        </div>
+      )}
+
+      {/* Optimization log */}
+      {optimizationLog.length > 0 && (
+        <div className="rounded-lg border border-border bg-card">
+          <div className="border-b border-border px-4 py-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Wand2 className="h-4 w-4 text-primary" />
+                <p className="text-xs font-medium">
+                  Optimization Log ({optimizationLog.length} rounds)
+                </p>
+              </div>
+              <button
+                onClick={() => setOptimizationLog([])}
+                className="text-[10px] text-muted-foreground hover:text-foreground"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+          <div className="max-h-80 overflow-y-auto divide-y divide-border/30">
+            {optimizationLog.map((opt, i) => (
+              <div key={i} className="px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[10px] font-bold">
+                    {i + 1}
+                  </span>
+                  {opt.isOptimal ? (
+                    <span className="flex items-center gap-1 text-xs text-success">
+                      <Check className="h-3 w-3" /> Optimal
+                    </span>
+                  ) : opt.applied ? (
+                    <span className="flex items-center gap-1 text-xs text-primary">
+                      <ArrowRight className="h-3 w-3" /> Applied
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Proposed</span>
+                  )}
+                  <span className="text-[10px] text-muted-foreground/50">
+                    Confidence: {Math.round(opt.confidenceInChanges * 100)}%
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-foreground/70">{opt.analysis}</p>
+                {opt.changesSummary.length > 0 && (
+                  <ul className="mt-1.5 space-y-0.5">
+                    {opt.changesSummary.map((c, j) => (
+                      <li key={j} className="text-[10px] text-muted-foreground">
+                        · {c}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="mt-1.5 text-[10px] font-medium text-primary/70">
+                  {opt.recommendation}
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -243,6 +426,8 @@ export default function BacktestsPage() {
               onToggle={() =>
                 setExpandedId(expandedId === run.id ? null : run.id)
               }
+              onOptimize={run.results ? () => handleOptimize(run, false) : undefined}
+              optimizing={optimizing}
             />
           ))}
         </div>
@@ -257,10 +442,14 @@ function RunCard({
   run,
   expanded,
   onToggle,
+  onOptimize,
+  optimizing,
 }: {
   run: BacktestRun;
   expanded: boolean;
   onToggle: () => void;
+  onOptimize?: () => void;
+  optimizing?: boolean;
 }) {
   const statusStyles = {
     pending: "bg-muted text-muted-foreground",
@@ -317,6 +506,24 @@ function RunCard({
       {expanded && run.results && (
         <div className="border-t border-border/50 px-5 py-4">
           <ResultsPanel results={run.results} />
+
+          {/* Optimize button */}
+          {onOptimize && (
+            <div className="mt-3">
+              <button
+                onClick={onOptimize}
+                disabled={optimizing}
+                className="inline-flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 disabled:opacity-50"
+              >
+                {optimizing ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Wand2 className="h-3 w-3" />
+                )}
+                Ask Claude to Optimize
+              </button>
+            </div>
+          )}
 
           {/* Signals summary */}
           {run.signals.length > 0 && (
