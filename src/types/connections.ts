@@ -9,6 +9,7 @@ export const PROVIDERS = [
   "rithmic",
   "ninjatrader",
   "topstepx",
+  "polymarket",
 ] as const;
 
 export type Provider = (typeof PROVIDERS)[number];
@@ -61,6 +62,13 @@ export const topstepxCredentialsSchema = z.object({
   accountId: z.string().optional().default(""),
 });
 
+export const polymarketCredentialsSchema = z.object({
+  privateKey: z.string().min(1, "Wallet private key is required"),
+  apiKey: z.string().optional().default(""),
+  apiSecret: z.string().optional().default(""),
+  apiPassphrase: z.string().optional().default(""),
+});
+
 export const credentialSchemas: Record<Provider, z.ZodTypeAny> = {
   databento: databentoCredentialsSchema,
   claude: claudeCredentialsSchema,
@@ -68,6 +76,7 @@ export const credentialSchemas: Record<Provider, z.ZodTypeAny> = {
   rithmic: rithmicCredentialsSchema,
   ninjatrader: ninjatraderCredentialsSchema,
   topstepx: topstepxCredentialsSchema,
+  polymarket: polymarketCredentialsSchema,
 };
 
 // ─── Type exports ────────────────────────────────────────────
@@ -257,6 +266,20 @@ export const PROVIDER_CONFIGS: ProviderConfig[] = [
       { key: "accountId", label: "Account ID", type: "text", placeholder: "e.g. TSX-12345", required: false, helpText: "Specific funded account to trade" },
     ],
     notes: "OAuth-based auth. Token refresh handled automatically.",
+  },
+  {
+    provider: "polymarket",
+    category: "execution",
+    name: "Polymarket",
+    description: "Prediction markets trading via CLOB API on Polygon",
+    supportsEnvironment: false,
+    fields: [
+      { key: "privateKey", label: "Wallet Private Key", type: "password", placeholder: "0x...", required: true, helpText: "Polygon wallet private key for signing orders. L2 API key derived automatically." },
+      { key: "apiKey", label: "API Key (optional)", type: "password", placeholder: "Auto-derived if empty", required: false, helpText: "L2 API key — leave empty to auto-derive from private key" },
+      { key: "apiSecret", label: "API Secret (optional)", type: "password", placeholder: "Auto-derived if empty", required: false },
+      { key: "apiPassphrase", label: "API Passphrase (optional)", type: "password", placeholder: "Auto-derived if empty", required: false },
+    ],
+    notes: "Non-custodial. Orders signed with your wallet. USDC on Polygon.",
   },
 ];
 

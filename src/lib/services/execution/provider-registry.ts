@@ -5,6 +5,7 @@ import { TradovateAdapter } from "./adapter-tradovate";
 import { TopstepXAdapter } from "./adapter-topstepx";
 import { RithmicAdapter } from "./adapter-rithmic";
 import { NinjaTraderAdapter } from "./adapter-ninjatrader";
+import { PolymarketAdapter } from "./adapter-polymarket";
 
 const DEFAULT_NT_PORT = 8080;
 import type {
@@ -134,6 +135,23 @@ async function doInit(): Promise<void> {
     }
   } catch {
     // No NinjaTrader credentials
+  }
+
+  // Polymarket
+  try {
+    const creds = await getRawCredentials("polymarket");
+    if (creds?.privateKey) {
+      const adapter = new PolymarketAdapter({
+        privateKey: String(creds.privateKey),
+        apiKey: creds.apiKey ? String(creds.apiKey) : undefined,
+        apiSecret: creds.apiSecret ? String(creds.apiSecret) : undefined,
+        apiPassphrase: creds.apiPassphrase ? String(creds.apiPassphrase) : undefined,
+      });
+      registerAdapter(adapter);
+      log.execution.info("Polymarket adapter initialized from stored credentials");
+    }
+  } catch {
+    // No Polymarket credentials
   }
 
   // Fallback: always have a mock for development

@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
     let result;
     try {
       result = JSON.parse(jsonStr);
-    } catch (parseErr) {
+    } catch {
       log.engine.error("Strategy Designer JSON parse failed", {
         rawLength: textBlock.text.length,
         extractedFirst100: jsonStr.slice(0, 100),

@@ -5,6 +5,7 @@ export const EXECUTION_PROVIDERS = [
   "rithmic",
   "ninjatrader",
   "topstepx",
+  "polymarket",
 ] as const;
 
 export type ExecutionProvider = (typeof EXECUTION_PROVIDERS)[number];

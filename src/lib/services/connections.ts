@@ -285,6 +285,22 @@ export async function testConnection(
           : "Host address or API key is required.";
         break;
 
+      case "polymarket": {
+        if (!creds.privateKey) {
+          message = "Wallet private key is required.";
+          break;
+        }
+        // Test Polymarket connectivity by hitting the public markets endpoint
+        const pmRes = await fetch("https://gamma-api.polymarket.com/markets?limit=1", {
+          signal: AbortSignal.timeout(10_000),
+        });
+        success = pmRes.ok;
+        message = success
+          ? "Polymarket API reachable. Private key saved for order signing."
+          : `Polymarket API unreachable (${pmRes.status}).`;
+        break;
+      }
+
       default:
         message = `Unknown provider: ${provider}`;
         break;

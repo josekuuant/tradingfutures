@@ -132,7 +132,8 @@ export function calculateResults(
 
   // Max daily drawdown
   let maxDailyDrawdown = 0;
-  for (const dayPnl of dailyPnL.values()) {
+  const dailyValues = Array.from(dailyPnL.values());
+  for (const dayPnl of dailyValues) {
     if (dayPnl < -maxDailyDrawdown) maxDailyDrawdown = Math.abs(dayPnl);
   }
   const maxDailyDrawdownPercent =

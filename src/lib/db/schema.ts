@@ -7,7 +7,7 @@ export const apiConnections = sqliteTable("api_connections", {
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
   provider: text("provider", {
-    enum: ["databento", "claude", "tradovate", "rithmic", "ninjatrader", "topstepx"],
+    enum: ["databento", "claude", "tradovate", "rithmic", "ninjatrader", "topstepx", "polymarket"],
   }).notNull(),
   isEnabled: integer("is_enabled", { mode: "boolean" })
     .notNull()
