@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Target, Plus, Loader2 } from "lucide-react";
+import { Target, Plus, Loader2, Wand2 } from "lucide-react";
 import type { Strategy, StrategyFormData } from "@/types/strategy";
 import { StrategyCard } from "@/components/strategies/strategy-card";
 import { StrategyEditor } from "@/components/strategies/strategy-editor";
+import { AIStrategyDesigner } from "@/components/strategies/ai-designer";
 import { ToastContainer } from "@/components/ui/toast-container";
 import { useToast } from "@/hooks/use-toast";
 
@@ -13,6 +14,7 @@ export default function StrategiesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [designerOpen, setDesignerOpen] = useState(false);
   const [editingStrategy, setEditingStrategy] = useState<Strategy | null>(null);
   const { toasts, show, dismiss } = useToast();
 
@@ -128,13 +130,22 @@ export default function StrategiesPage() {
           </div>
         </div>
 
-        <button
-          onClick={openCreate}
-          className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          New Strategy
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setDesignerOpen(true)}
+            className="inline-flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-4 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/10"
+          >
+            <Wand2 className="h-3.5 w-3.5" />
+            AI Design
+          </button>
+          <button
+            onClick={openCreate}
+            className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            New Strategy
+          </button>
+        </div>
       </div>
 
       {/* Error state */}
@@ -185,6 +196,52 @@ export default function StrategiesPage() {
           onClose={() => {
             setEditorOpen(false);
             setEditingStrategy(null);
+          }}
+        />
+      )}
+
+      {designerOpen && (
+        <AIStrategyDesigner
+          onClose={() => setDesignerOpen(false)}
+          onApply={async (result) => {
+            try {
+              // Save strategy
+              const stratRes = await fetch("/api/strategies", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(result.strategy),
+              });
+              if (!stratRes.ok) throw new Error("Failed to save strategy");
+              const savedStrategy = await stratRes.json();
+
+              // Save prompt
+              const promptRes = await fetch("/api/prompts", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(result.prompt),
+              });
+              if (!promptRes.ok) throw new Error("Failed to save prompt");
+
+              // Activate both
+              await fetch(`/api/strategies/${savedStrategy.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "activate" }),
+              });
+
+              const savedPrompt = await promptRes.json();
+              await fetch(`/api/prompts/${savedPrompt.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "activate" }),
+              });
+
+              show("success", `Strategy "${savedStrategy.name}" + prompt created and activated`);
+              setDesignerOpen(false);
+              await fetchStrategies();
+            } catch (err) {
+              show("error", err instanceof Error ? err.message : "Failed to save");
+            }
           }}
         />
       )}
