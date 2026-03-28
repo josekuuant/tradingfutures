@@ -101,7 +101,20 @@ export async function POST(req: NextRequest) {
     }
 
     const jsonStr = extractJsonFromResponse(textBlock.text);
-    const result = JSON.parse(jsonStr);
+
+    let result;
+    try {
+      result = JSON.parse(jsonStr);
+    } catch (parseErr) {
+      log.engine.error("Strategy Designer JSON parse failed", {
+        rawLength: textBlock.text.length,
+        extractedFirst100: jsonStr.slice(0, 100),
+      });
+      return NextResponse.json(
+        { error: "Claude returned invalid JSON. Please try again." },
+        { status: 500 }
+      );
+    }
 
     log.engine.info("AI Strategy Designer completed", {
       strategyName: result.strategy?.name,

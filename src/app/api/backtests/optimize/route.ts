@@ -162,7 +162,18 @@ Analyze these results and propose specific improvements. Remember: small targete
 
     const jsonStr = extractJsonFromResponse(textBlock.text);
 
-    const optimization = JSON.parse(jsonStr);
+    let optimization;
+    try {
+      optimization = JSON.parse(jsonStr);
+    } catch {
+      log.engine.error("Optimizer JSON parse failed", {
+        extractedFirst100: jsonStr.slice(0, 100),
+      });
+      return NextResponse.json(
+        { error: "Claude returned invalid JSON. Please try again." },
+        { status: 500 }
+      );
+    }
 
     // Auto-apply changes if requested and Claude is confident enough
     // Threshold: 60% confidence minimum to auto-apply
