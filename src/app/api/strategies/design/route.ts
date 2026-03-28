@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { getRawCredentials } from "@/lib/services/connections";
 import { log } from "@/lib/logger";
+import { extractJsonFromResponse } from "@/lib/json-extract";
 
 /**
  * AI Strategy Designer — takes a natural language description of a trading
@@ -99,13 +100,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Extract JSON from response
-    let jsonStr = textBlock.text.trim();
-    if (jsonStr.includes("```")) {
-      const match = jsonStr.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
-      if (match) jsonStr = match[1].trim();
-    }
-
+    const jsonStr = extractJsonFromResponse(textBlock.text);
     const result = JSON.parse(jsonStr);
 
     log.engine.info("AI Strategy Designer completed", {

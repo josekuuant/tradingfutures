@@ -4,6 +4,7 @@ import { getRawCredentials } from "@/lib/services/connections";
 import { getStrategy, updateStrategy } from "@/lib/services/strategies";
 import { getPrompt, updatePrompt } from "@/lib/services/prompts";
 import { log } from "@/lib/logger";
+import { extractJsonFromResponse } from "@/lib/json-extract";
 import type { BacktestResults } from "@/types/backtest";
 
 const OPTIMIZER_SYSTEM = `You are a trading strategy optimization engine. You analyze backtest results and propose specific, actionable adjustments to improve strategy profitability and safety.
@@ -159,11 +160,7 @@ Analyze these results and propose specific improvements. Remember: small targete
       return NextResponse.json({ error: "No response from Claude" }, { status: 500 });
     }
 
-    let jsonStr = textBlock.text.trim();
-    if (jsonStr.includes("```")) {
-      const match = jsonStr.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
-      if (match) jsonStr = match[1].trim();
-    }
+    const jsonStr = extractJsonFromResponse(textBlock.text);
 
     const optimization = JSON.parse(jsonStr);
 

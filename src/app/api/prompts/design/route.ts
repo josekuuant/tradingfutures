@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { getRawCredentials } from "@/lib/services/connections";
 import { log } from "@/lib/logger";
+import { extractJsonFromResponse } from "@/lib/json-extract";
 
 const PROMPT_DESIGNER_SYSTEM = `You are an expert prompt engineer for an NQ/MNQ futures trading signal engine powered by Claude AI.
 
@@ -96,12 +97,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "No response from Claude" }, { status: 500 });
     }
 
-    let jsonStr = textBlock.text.trim();
-    if (jsonStr.includes("```")) {
-      const match = jsonStr.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
-      if (match) jsonStr = match[1].trim();
-    }
-
+    const jsonStr = extractJsonFromResponse(textBlock.text);
     const result = JSON.parse(jsonStr);
 
     log.engine.info("AI Prompt Designer completed", { name: result.name });
