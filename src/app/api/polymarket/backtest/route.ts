@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { getRawCredentials } from "@/lib/services/connections";
+
+export const maxDuration = 300;
 import { getStrategy } from "@/lib/services/strategies";
 import { getPrompt } from "@/lib/services/prompts";
 import { log } from "@/lib/logger";

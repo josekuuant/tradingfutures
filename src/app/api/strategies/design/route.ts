@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { getRawCredentials } from "@/lib/services/connections";
+
+// Allow up to 5 minutes for complex strategy design
+export const maxDuration = 300;
 import { log } from "@/lib/logger";
 import { extractJsonFromResponse } from "@/lib/json-extract";
 

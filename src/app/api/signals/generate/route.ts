@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { generateSignal, getLastTrace } from "@/lib/services/signal-engine";
 import { INSTRUMENTS, TIMEFRAMES, type Instrument, type Timeframe } from "@/types/market";
 
+export const maxDuration = 300;
+
 export async function POST(req: NextRequest) {
   try {
     let body: Record<string, unknown> = {};
