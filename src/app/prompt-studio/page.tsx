@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { MessageSquareCode, Plus, Loader2 } from "lucide-react";
+import { MessageSquareCode, Plus, Loader2, Wand2 } from "lucide-react";
 import type { Prompt, PromptFormData } from "@/types/prompt";
 import { PromptCard } from "@/components/prompt-studio/prompt-card";
 import { PromptEditor } from "@/components/prompt-studio/prompt-editor";
 import { VersionPanel } from "@/components/prompt-studio/version-panel";
 import { TestPanel } from "@/components/prompt-studio/test-panel";
+import { AIPromptDesigner } from "@/components/prompt-studio/ai-prompt-designer";
 import { ToastContainer } from "@/components/ui/toast-container";
 import { useToast } from "@/hooks/use-toast";
 
@@ -14,7 +15,8 @@ type ModalState =
   | { type: "none" }
   | { type: "editor"; prompt: Prompt | null }
   | { type: "versions"; prompt: Prompt }
-  | { type: "test"; prompt: Prompt };
+  | { type: "test"; prompt: Prompt }
+  | { type: "ai_designer" };
 
 export default function PromptStudioPage() {
   const [prompts, setPrompts] = useState<Prompt[]>([]);
@@ -135,13 +137,22 @@ export default function PromptStudioPage() {
             </p>
           </div>
         </div>
-        <button
-          onClick={() => setModal({ type: "editor", prompt: null })}
-          className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          New Prompt
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setModal({ type: "ai_designer" })}
+            className="inline-flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-4 py-2 text-xs font-medium text-primary hover:bg-primary/10"
+          >
+            <Wand2 className="h-3.5 w-3.5" />
+            AI Design
+          </button>
+          <button
+            onClick={() => setModal({ type: "editor", prompt: null })}
+            className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            New Prompt
+          </button>
+        </div>
       </div>
 
       {/* Error state */}
@@ -205,6 +216,35 @@ export default function PromptStudioPage() {
         <TestPanel
           prompt={modal.prompt}
           onClose={() => setModal({ type: "none" })}
+        />
+      )}
+      {modal.type === "ai_designer" && (
+        <AIPromptDesigner
+          onClose={() => setModal({ type: "none" })}
+          onApply={async (designed) => {
+            try {
+              const res = await fetch("/api/prompts", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(designed),
+              });
+              if (!res.ok) throw new Error("Failed to save prompt");
+              const saved = await res.json();
+
+              // Activate
+              await fetch(`/api/prompts/${saved.id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ action: "activate" }),
+              });
+
+              show("success", `Prompt "${saved.name}" created and activated`);
+              setModal({ type: "none" });
+              await fetchPrompts();
+            } catch (err) {
+              show("error", err instanceof Error ? err.message : "Failed to save");
+            }
+          }}
         />
       )}
 
