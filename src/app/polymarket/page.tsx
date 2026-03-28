@@ -2,6 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
+import type { Strategy } from "@/types/strategy";
+import type { Prompt } from "@/types/prompt";
+import type { PolyBacktestRun, PolyBacktestConfig } from "@/types/poly-backtest";
 import {
   TrendingUp,
   Search,
@@ -11,6 +14,9 @@ import {
   ChevronDown,
   ChevronUp,
   BarChart3,
+  FlaskConical,
+  Trophy,
+  TrendingDown,
 } from "lucide-react";
 
 interface Market {
@@ -45,6 +51,51 @@ export default function PolymarketPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [history, setHistory] = useState<PriceHistory[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [strategies, setStrategies] = useState<Strategy[]>([]);
+  const [prompts, setPrompts] = useState<Prompt[]>([]);
+  const [backtestRun, setBacktestRun] = useState<PolyBacktestRun | null>(null);
+  const [backtesting, setBacktesting] = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      fetch("/api/strategies").then((r) => r.ok ? r.json() : []),
+      fetch("/api/prompts").then((r) => r.ok ? r.json() : []),
+    ]).then(([s, p]) => { setStrategies(s); setPrompts(p); }).catch(() => {});
+  }, []);
+
+  const runBacktest = async (market: Market) => {
+    const tokenId = getTokenId(market);
+    if (!tokenId || strategies.length === 0 || prompts.length === 0) return;
+    setBacktesting(true);
+    setBacktestRun(null);
+    try {
+      const res = await fetch("/api/polymarket/backtest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          strategyId: strategies.find((s) => s.isActive)?.id ?? strategies[0]?.id,
+          promptId: prompts.find((p) => p.isActive)?.id ?? prompts[0]?.id,
+          marketId: market.slug ?? market.id,
+          tokenId,
+          marketQuestion: market.question,
+          initialCapital: 1000,
+          positionSizePercent: 20,
+          entryThreshold: 0.40,
+          exitThreshold: 0.70,
+          stopLoss: 0.10,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Backtest failed");
+      }
+      setBacktestRun(await res.json());
+    } catch (err) {
+      setBacktestRun({ id: "", config: {} as PolyBacktestConfig, status: "failed", results: null, error: err instanceof Error ? err.message : "Failed", startedAt: "", completedAt: null } as PolyBacktestRun);
+    } finally {
+      setBacktesting(false);
+    }
+  };
 
   const fetchMarkets = useCallback(async () => {
     setLoading(true);
@@ -159,6 +210,10 @@ export default function PolymarketPage() {
               onToggle={() => toggleExpand(market)}
               history={expandedId === market.id ? history : []}
               historyLoading={expandedId === market.id && historyLoading}
+              onBacktest={() => runBacktest(market)}
+              backtesting={expandedId === market.id && backtesting}
+              backtestRun={expandedId === market.id ? backtestRun : null}
+              hasStrategies={strategies.length > 0 && prompts.length > 0}
             />
           ))}
         </div>
@@ -179,12 +234,20 @@ function MarketCard({
   onToggle,
   history,
   historyLoading,
+  onBacktest,
+  backtesting,
+  backtestRun,
+  hasStrategies,
 }: {
   market: Market;
   expanded: boolean;
   onToggle: () => void;
   history: PriceHistory[];
   historyLoading: boolean;
+  onBacktest: () => void;
+  backtesting: boolean;
+  backtestRun: PolyBacktestRun | null;
+  hasStrategies: boolean;
 }) {
   const prices = parsePrices(market);
   const volume = market.volume ?? 0;
@@ -257,14 +320,70 @@ function MarketCard({
             </div>
           )}
 
-          <a
-            href={`https://polymarket.com/event/${market.slug}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline"
-          >
-            View on Polymarket <ExternalLink className="h-3 w-3" />
-          </a>
+          {/* Backtest */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onBacktest}
+              disabled={backtesting || !hasStrategies}
+              className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-40"
+            >
+              {backtesting ? <Loader2 className="h-3 w-3 animate-spin" /> : <FlaskConical className="h-3 w-3" />}
+              {backtesting ? "Running..." : "Backtest with AI"}
+            </button>
+            <a
+              href={`https://polymarket.com/event/${market.slug}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline"
+            >
+              View on Polymarket <ExternalLink className="h-3 w-3" />
+            </a>
+          </div>
+
+          {!hasStrategies && (
+            <p className="text-[10px] text-muted-foreground/50">Create a strategy and prompt first to run backtests</p>
+          )}
+
+          {/* Backtest results */}
+          {backtestRun?.status === "failed" && (
+            <div className="rounded bg-danger/10 px-3 py-2 text-xs text-danger">{backtestRun.error}</div>
+          )}
+          {backtestRun?.results && (
+            <div className="rounded-lg border border-border/50 p-3 space-y-3">
+              <div className="flex items-center gap-2">
+                <FlaskConical className="h-3.5 w-3.5 text-primary" />
+                <span className="text-xs font-medium">Backtest Results</span>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 lg:grid-cols-6">
+                <MiniMetric label="Net Profit" value={`$${backtestRun.results.netProfit.toFixed(2)}`} color={backtestRun.results.netProfit >= 0 ? "text-success" : "text-danger"} />
+                <MiniMetric label="Return" value={`${backtestRun.results.netProfitPercent}%`} color={backtestRun.results.netProfitPercent >= 0 ? "text-success" : "text-danger"} />
+                <MiniMetric label="Win Rate" value={backtestRun.results.winRate != null ? `${Math.round(backtestRun.results.winRate * 100)}%` : "—"} color={backtestRun.results.winRate != null && backtestRun.results.winRate >= 0.5 ? "text-success" : "text-danger"} icon={backtestRun.results.winRate != null && backtestRun.results.winRate >= 0.5 ? Trophy : TrendingDown} />
+                <MiniMetric label="Trades" value={String(backtestRun.results.trades)} />
+                <MiniMetric label="Max DD" value={`$${backtestRun.results.maxDrawdown.toFixed(2)}`} color="text-danger" />
+                <MiniMetric label="PF" value={backtestRun.results.profitFactor?.toFixed(2) ?? "—"} />
+              </div>
+
+              {/* Mini equity curve */}
+              {backtestRun.results.equityCurve.length > 1 && (
+                <MiniChart data={backtestRun.results.equityCurve.map((p) => ({ t: 0, p: p.equity / backtestRun.results!.initialCapital }))} />
+              )}
+
+              {/* Signal list */}
+              {backtestRun.results.signals.filter((s) => s.action !== "NO_TRADE").length > 0 && (
+                <div className="max-h-40 overflow-y-auto rounded border border-border/30">
+                  {backtestRun.results.signals.filter((s) => s.action !== "NO_TRADE").map((s, i) => (
+                    <div key={i} className="flex items-center gap-2 border-b border-border/10 px-2 py-1 text-[10px] last:border-0">
+                      <span className={cn("w-14 font-bold", s.action === "BUY_YES" ? "text-success" : "text-danger")}>{s.action}</span>
+                      <span className="w-10 tabular-nums">{(s.price * 100).toFixed(0)}¢</span>
+                      <span className={cn("w-14 font-medium", s.outcome === "profit" ? "text-success" : s.outcome === "loss" ? "text-danger" : "text-muted-foreground/40")}>{s.outcome}</span>
+                      <span className="min-w-0 flex-1 truncate text-foreground/50">{s.reasoning}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -303,6 +422,20 @@ function MiniChart({ data }: { data: PriceHistory[] }) {
         points={`0,${h} ${points} ${w},${h}`}
       />
     </svg>
+  );
+}
+
+// ─── Mini metric ─────────────────────────────────────────────
+
+function MiniMetric({ label, value, color, icon: Icon }: { label: string; value: string; color?: string; icon?: typeof Trophy }) {
+  return (
+    <div className="rounded bg-muted/20 px-2 py-1.5">
+      <p className="text-[9px] text-muted-foreground/50">{label}</p>
+      <div className="flex items-center gap-1">
+        {Icon && <Icon className="h-2.5 w-2.5 text-muted-foreground/40" />}
+        <p className={cn("text-xs font-bold tabular-nums", color ?? "text-foreground/80")}>{value}</p>
+      </div>
+    </div>
   );
 }
 
