@@ -9,6 +9,7 @@ import {
   FlaskConical,
   ScrollText,
   Settings,
+  TrendingUp,
   type LucideIcon,
 } from "lucide-react";
 
@@ -27,6 +28,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Prompt Studio", href: "/prompt-studio", icon: MessageSquareCode },
   { label: "API Connections", href: "/connections", icon: Plug },
   { label: "Execution", href: "/execution", icon: Play },
+  { label: "Polymarket", href: "/polymarket", icon: TrendingUp },
   { label: "Backtests", href: "/backtests", icon: FlaskConical },
   { label: "Logs", href: "/logs", icon: ScrollText },
   { label: "Settings", href: "/settings", icon: Settings },
