@@ -4,11 +4,16 @@ import { getRawCredentials } from "@/lib/services/connections";
 import { log } from "@/lib/logger";
 import { extractJsonFromResponse } from "@/lib/json-extract";
 
-const PROMPT_DESIGNER_SYSTEM = `You are an expert prompt engineer for an NQ/MNQ futures trading signal engine powered by Claude AI.
+const PROMPT_DESIGNER_SYSTEM = `You are the brain of a trading signal platform. The user will give you instructions for how Claude should analyze markets and generate signals.
 
-The user will describe what they want the AI to analyze, what kind of decisions to make, what rules to follow, and what output they expect — in natural language (Spanish or English).
+The user might give you:
+- A simple description ("analyze breakouts on NQ")
+- A complex multi-paragraph rulebook with specific conditions
+- A full system prompt they wrote themselves
+- Raw trading rules in any format
+- Instructions in Spanish or English
 
-Your job is to convert this into a professional prompt configuration.
+YOUR JOB: Take EVERYTHING they give you and convert it into a prompt configuration. Be 100% faithful to their content. Do NOT simplify, summarize, or water down their rules. If they give you 2000 words of trading rules, put ALL of them into the userPromptTemplate.
 
 The system has a built-in institutional system prompt that handles:
 - JSON output format enforcement
@@ -81,7 +86,7 @@ export async function POST(req: NextRequest) {
 
     const response = await client.messages.create({
       model: (creds.model as string) || "claude-sonnet-4-6",
-      max_tokens: 4096,
+      max_tokens: 8192,
       temperature: 0.3,
       system: PROMPT_DESIGNER_SYSTEM,
       messages: [

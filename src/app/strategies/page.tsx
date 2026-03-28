@@ -205,13 +205,24 @@ export default function StrategiesPage() {
           onClose={() => setDesignerOpen(false)}
           onApply={async (result) => {
             try {
+              // Normalize strategy before saving
+              const strat = result.strategy as Record<string, unknown>;
+              // Ensure timeframes is an array
+              if (typeof strat.timeframes === "string") strat.timeframes = [strat.timeframes];
+              if (!Array.isArray(strat.timeframes)) strat.timeframes = ["5m"];
+              // Ensure minRR is a number
+              if (typeof strat.minRR === "string") strat.minRR = parseFloat(strat.minRR) || 2;
+
               // Save strategy
               const stratRes = await fetch("/api/strategies", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(result.strategy),
+                body: JSON.stringify(strat),
               });
-              if (!stratRes.ok) throw new Error("Failed to save strategy");
+              if (!stratRes.ok) {
+                const errData = await stratRes.json().catch(() => ({}));
+                throw new Error(errData.error ?? "Failed to save strategy");
+              }
               const savedStrategy = await stratRes.json();
 
               // Save prompt

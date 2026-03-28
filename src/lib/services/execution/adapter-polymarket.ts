@@ -179,7 +179,8 @@ export class PolymarketAdapter implements ExecutionProviderAdapter {
     if (!this.clobClient) return [];
 
     try {
-      const client = this.clobClient as never;
+      const client = // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      this.clobClient as any;
       const orders = await client.getOpenOrders();
       return (orders ?? []).map(mapPolyOrder);
     } catch (err) {
@@ -191,7 +192,8 @@ export class PolymarketAdapter implements ExecutionProviderAdapter {
   async placeOrder(request: OrderRequest, accountId: string): Promise<NormalizedOrder> {
     if (!this.clobClient) throw new Error("Polymarket not connected");
 
-    const client = this.clobClient as never;
+    const client = // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      this.clobClient as any;
 
     // Polymarket orders need tokenID, price (0-1), and size
     // The instrument should be the tokenID or market slug
@@ -229,7 +231,8 @@ export class PolymarketAdapter implements ExecutionProviderAdapter {
     if (!this.clobClient) return { ok: false, message: "Not connected" };
 
     try {
-      const client = this.clobClient as never;
+      const client = // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      this.clobClient as any;
       await client.cancelOrder(orderId);
       return { ok: true, message: `Order ${orderId} cancelled` };
     } catch (err) {

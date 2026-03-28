@@ -7,34 +7,42 @@ export { INSTRUMENTS, TIMEFRAMES };
 // ─── Strategy schema ─────────────────────────────────────────
 
 export const strategySchema = z.object({
-  name: z.string().min(1, "Name is required").max(100),
-  description: z.string().max(500).optional().default(""),
+  name: z.string().min(1, "Name is required").max(200),
+  description: z.string().max(5000).optional().default(""),
   tag: z.string().max(30).optional().default(""),
-  instrument: z.enum(INSTRUMENTS).default("NQ"),
-  timeframes: z.array(z.enum(TIMEFRAMES)).min(1, "Select at least one timeframe"),
+  instrument: z.enum(INSTRUMENTS).default("NQ").catch("NQ"),
+  timeframes: z.preprocess(
+    (val) => {
+      // Accept string "5m" → ["5m"], or array, or comma-separated
+      if (typeof val === "string") return [val];
+      if (Array.isArray(val)) return val;
+      return ["5m"];
+    },
+    z.array(z.string()).min(1).default(["5m"])
+  ),
 
   // Context conditions
-  contextConditions: z.string().max(2000).optional().default(""),
+  contextConditions: z.string().max(10000).optional().default(""),
 
   // Entry conditions
-  entryConditions: z.string().max(2000).optional().default(""),
+  entryConditions: z.string().max(10000).optional().default(""),
 
   // Invalidation
-  invalidation: z.string().max(1000).optional().default(""),
+  invalidation: z.string().max(5000).optional().default(""),
 
   // Risk management
-  tp1: z.string().max(200).optional().default(""),
-  tp2: z.string().max(200).optional().default(""),
+  tp1: z.string().max(2000).optional().default(""),
+  tp2: z.string().max(2000).optional().default(""),
   minRR: z.coerce.number().min(0).max(20).optional().default(2),
 
   // Filters
-  volatilityFilter: z.string().max(500).optional().default(""),
-  volumeFilter: z.string().max(500).optional().default(""),
-  scheduleFilter: z.string().max(500).optional().default(""),
-  newsFilter: z.string().max(500).optional().default(""),
+  volatilityFilter: z.string().max(5000).optional().default(""),
+  volumeFilter: z.string().max(5000).optional().default(""),
+  scheduleFilter: z.string().max(5000).optional().default(""),
+  newsFilter: z.string().max(5000).optional().default(""),
 
   // No-trade rules
-  noTradeRules: z.string().max(2000).optional().default(""),
+  noTradeRules: z.string().max(10000).optional().default(""),
 
   // Claude prompt
   promptTemplate: z.string().max(10000).optional().default(""),

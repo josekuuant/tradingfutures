@@ -10,7 +10,9 @@ import { extractJsonFromResponse } from "@/lib/json-extract";
  * ready to save in the system.
  */
 
-const DESIGNER_SYSTEM_PROMPT = `You are a senior trading strategy architect. The user will describe a trading strategy idea in natural language (possibly in Spanish or English). Your job is to convert it into a fully structured configuration for an NQ/MNQ futures signal engine.
+const DESIGNER_SYSTEM_PROMPT = `You are the brain of a trading signal platform. The user will give you a strategy description — it could be a simple idea, a complex multi-page rulebook, raw notes, conditions in any format, or even a full system prompt they want to use.
+
+YOUR JOB: Take whatever they give you and convert it into a structured strategy + prompt that the platform can execute. Be faithful to their intent. Don't simplify or water down their rules. If they give you complex conditions, keep them complex. If they give you a detailed prompt, incorporate it fully into the userPromptTemplate.
 
 You must return ONLY valid JSON with this exact structure:
 
@@ -42,11 +44,14 @@ You must return ONLY valid JSON with this exact structure:
   }
 }
 
-RULES:
-- The systemPrompt field should be EMPTY (the platform uses a built-in institutional system prompt)
-- The userPromptTemplate MUST use {{variable}} placeholders for dynamic data injection
-- Be specific and actionable — no vague conditions
-- Think like a professional prop desk quant
+CRITICAL RULES:
+- systemPrompt MUST be empty string "" (the platform has a built-in institutional system prompt)
+- userPromptTemplate MUST use {{variable}} placeholders for market data injection
+- timeframes MUST be an array like ["5m"] or ["1m", "5m"]
+- minRR MUST be a number like 2 or 3, not a string
+- If the user gives you a complex, detailed description, preserve ALL their rules and conditions — do NOT simplify
+- If the user gives you what looks like a full prompt/system prompt, put that content into the strategy fields AND into the userPromptTemplate
+- Be faithful to the user's intent — you are a translator, not an editor
 - All text in English regardless of input language
 - The prompt should instruct Claude to analyze the provided data against the strategy rules
 - Include all relevant market data variables in the user prompt
@@ -81,7 +86,7 @@ export async function POST(req: NextRequest) {
 
     const response = await client.messages.create({
       model: (creds.model as string) || "claude-sonnet-4-6",
-      max_tokens: 4096,
+      max_tokens: 8192,
       temperature: 0.3,
       system: DESIGNER_SYSTEM_PROMPT,
       messages: [
