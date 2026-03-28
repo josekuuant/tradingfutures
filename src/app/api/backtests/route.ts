@@ -14,6 +14,10 @@ const backtestConfigSchema = z
     candleCount: z.coerce.number().int().min(50).max(2000).default(200),
     windowSize: z.coerce.number().int().min(10).max(200).default(50),
     stepSize: z.coerce.number().int().min(1).max(100).default(10),
+    initialCapital: z.coerce.number().min(1000).max(10000000).default(50000),
+    contractSize: z.coerce.number().int().min(1).max(100).default(1),
+    pointValue: z.coerce.number().min(0.1).max(1000).default(20),
+    commissionPerTrade: z.coerce.number().min(0).max(100).default(4.5),
   })
   .refine((d) => d.windowSize < d.candleCount, {
     message: "windowSize must be less than candleCount",

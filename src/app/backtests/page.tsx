@@ -48,6 +48,10 @@ export default function BacktestsPage() {
   const [candleCount, setCandleCount] = useState(200);
   const [windowSize, setWindowSize] = useState(50);
   const [stepSize, setStepSize] = useState(10);
+  const [initialCapital, setInitialCapital] = useState(50000);
+  const [contractSize, setContractSize] = useState(1);
+  const [pointValue, setPointValue] = useState(20);
+  const [commissionPerTrade, setCommissionPerTrade] = useState(4.5);
 
   const fetchData = useCallback(async () => {
     try {
@@ -86,11 +90,8 @@ export default function BacktestsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          strategyId,
-          promptId,
-          candleCount,
-          windowSize,
-          stepSize,
+          strategyId, promptId, candleCount, windowSize, stepSize,
+          initialCapital, contractSize, pointValue, commissionPerTrade,
         }),
       });
       if (res.ok) {
@@ -160,7 +161,7 @@ export default function BacktestsPage() {
         const res = await fetch("/api/backtests", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ strategyId, promptId, candleCount, windowSize, stepSize }),
+          body: JSON.stringify({ strategyId, promptId, candleCount, windowSize, stepSize, initialCapital, contractSize, pointValue, commissionPerTrade }),
         });
         if (res.ok) run = await res.json();
       } catch { /* handled below */ }
@@ -358,10 +359,30 @@ export default function BacktestsPage() {
           </div>
         </div>
 
+        {/* Capital simulation */}
+        <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div className="space-y-1.5">
+            <label className="text-xs text-muted-foreground">Initial Capital ($)</label>
+            <input type="number" value={initialCapital} onChange={(e) => setInitialCapital(Number(e.target.value))} min={1000} className={cn(inputClass, "w-full")} />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs text-muted-foreground">Contracts</label>
+            <input type="number" value={contractSize} onChange={(e) => setContractSize(Number(e.target.value))} min={1} max={100} className={cn(inputClass, "w-full")} />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs text-muted-foreground">$/Point (NQ=20, MNQ=2)</label>
+            <input type="number" value={pointValue} onChange={(e) => setPointValue(Number(e.target.value))} min={0.1} step={0.1} className={cn(inputClass, "w-full")} />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs text-muted-foreground">Commission/Trade ($)</label>
+            <input type="number" value={commissionPerTrade} onChange={(e) => setCommissionPerTrade(Number(e.target.value))} min={0} step={0.5} className={cn(inputClass, "w-full")} />
+          </div>
+        </div>
+
         <div className="mt-4 flex items-center justify-between">
           <p className="text-[10px] text-muted-foreground/50">
             ~{Math.floor((candleCount - windowSize) / stepSize)} analysis
-            points · requires Claude API
+            points · ${initialCapital.toLocaleString()} capital · {contractSize} contract{contractSize > 1 ? "s" : ""}
           </p>
           <div className="flex items-center gap-2">
             <button
@@ -646,50 +667,95 @@ function RunCard({
 // ─── Results panel ───────────────────────────────────────────
 
 function ResultsPanel({ results }: { results: BacktestResults }) {
+  const fmt = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+  const fm = results.fundingMetrics;
+
   return (
     <div className="space-y-4">
-      {/* Metrics grid */}
+      {/* Row 1: P&L headline */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Metric
+          label="Net Profit"
+          value={fmt(results.netProfit)}
+          color={results.netProfit >= 0 ? "text-success" : "text-danger"}
+        />
+        <Metric
+          label="Return"
+          value={`${results.netProfitPercent >= 0 ? "+" : ""}${results.netProfitPercent}%`}
+          color={results.netProfitPercent >= 0 ? "text-success" : "text-danger"}
+        />
+        <Metric
+          label="Max Drawdown"
+          value={`${fmt(results.maxDrawdown)} (${results.maxDrawdownPercent}%)`}
+          color="text-danger"
+        />
+        <Metric
+          label="Max Daily DD"
+          value={`${fmt(results.maxDailyDrawdown)} (${results.maxDailyDrawdownPercent.toFixed(1)}%)`}
+          color="text-danger"
+        />
+      </div>
+
+      {/* Row 2: Trading stats */}
       <div className="grid grid-cols-3 gap-3 lg:grid-cols-6">
         <Metric label="Trades" value={String(results.tradeCount)} />
-        <Metric label="BUY" value={String(results.buyCount)} color="text-success" />
-        <Metric label="SELL" value={String(results.sellCount)} color="text-danger" />
-        <Metric label="No Trade" value={String(results.noTradeCount)} />
+        <Metric label="Wins" value={String(results.wins)} color="text-success" />
+        <Metric label="Losses" value={String(results.losses)} color="text-danger" />
         <Metric
           label="Win Rate"
-          value={
-            results.winRate != null
-              ? `${Math.round(results.winRate * 100)}%`
-              : "—"
-          }
-          color={
-            results.winRate != null && results.winRate >= 0.5
-              ? "text-success"
-              : "text-danger"
-          }
+          value={results.winRate != null ? `${Math.round(results.winRate * 100)}%` : "—"}
+          color={results.winRate != null && results.winRate >= 0.5 ? "text-success" : "text-danger"}
           icon={results.winRate != null && results.winRate >= 0.5 ? Trophy : TrendingDown}
         />
         <Metric
           label="Profit Factor"
           value={results.profitFactor != null ? String(results.profitFactor) : "—"}
-          color={
-            results.profitFactor != null && results.profitFactor >= 1
-              ? "text-success"
-              : "text-danger"
-          }
+          color={results.profitFactor != null && results.profitFactor >= 1 ? "text-success" : "text-danger"}
         />
+        <Metric label="Avg R:R" value={results.avgRR != null ? results.avgRR.toFixed(2) : "—"} />
       </div>
 
+      {/* Row 3: Capital details */}
       <div className="grid grid-cols-3 gap-3 lg:grid-cols-6">
-        <Metric label="Wins" value={String(results.wins)} color="text-success" />
-        <Metric label="Losses" value={String(results.losses)} color="text-danger" />
-        <Metric label="Pending" value={String(results.pending)} />
-        <Metric
-          label="Avg R:R"
-          value={results.avgRR != null ? results.avgRR.toFixed(2) : "—"}
-        />
+        <Metric label="Initial Capital" value={fmt(results.initialCapital)} />
+        <Metric label="Final Capital" value={fmt(results.finalCapital)} color={results.finalCapital >= results.initialCapital ? "text-success" : "text-danger"} />
+        <Metric label="Commissions" value={fmt(results.totalCommissions)} />
         <Metric label="Max Win Streak" value={String(results.maxConsecutiveWins)} />
         <Metric label="Max Loss Streak" value={String(results.maxConsecutiveLosses)} />
+        <Metric label="No Trade" value={String(results.noTradeCount)} />
       </div>
+
+      {/* Equity curve */}
+      {results.equityCurve && results.equityCurve.length > 1 && (
+        <div className="rounded-lg border border-border p-4">
+          <p className="mb-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
+            Equity Curve
+          </p>
+          <div className="h-40">
+            <EquityChart curve={results.equityCurve} initialCapital={results.initialCapital} />
+          </div>
+        </div>
+      )}
+
+      {/* Funding firm compatibility */}
+      {fm && (
+        <div className="rounded-lg border border-border p-4">
+          <p className="mb-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
+            Funding Firm Evaluation
+          </p>
+          <div className="grid grid-cols-3 gap-3">
+            <FundingBadge label="50K Eval" passes={fm.passes50kEval} maxDD="$2,500" maxDailyDD="$1,250" />
+            <FundingBadge label="100K Eval" passes={fm.passes100kEval} maxDD="$3,000" maxDailyDD="$1,500" />
+            <FundingBadge label="150K Eval" passes={fm.passes150kEval} maxDD="$4,500" maxDailyDD="$2,250" />
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <Metric label="Trading Days" value={String(fm.tradingDays)} />
+            <Metric label="Profitable Days" value={String(fm.profitableDays)} color={fm.profitableDays > fm.tradingDays / 2 ? "text-success" : "text-danger"} />
+            <Metric label="Consistency" value={`${fm.consistencyScore}%`} color={fm.consistencyScore < 40 ? "text-success" : "text-warning"} />
+            <Metric label="Avg Daily P&L" value={fmt(fm.avgDailyPnL)} color={fm.avgDailyPnL >= 0 ? "text-success" : "text-danger"} />
+          </div>
+        </div>
+      )}
 
       {/* Disclaimers */}
       {results.disclaimers.length > 0 && (
@@ -700,13 +766,72 @@ function ResultsPanel({ results }: { results: BacktestResults }) {
           </div>
           <ul className="mt-1 space-y-0.5">
             {results.disclaimers.map((d, i) => (
-              <li key={i} className="text-[10px] text-muted-foreground/60">
-                · {d}
-              </li>
+              <li key={i} className="text-[10px] text-muted-foreground/60">· {d}</li>
             ))}
           </ul>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Equity curve chart (pure CSS — no chart library needed) ──
+
+function EquityChart({ curve, initialCapital }: { curve: BacktestResults["equityCurve"]; initialCapital: number }) {
+  if (curve.length < 2) return null;
+
+  const equities = curve.map((p) => p.equity);
+  const min = Math.min(...equities);
+  const max = Math.max(...equities);
+  const range = max - min || 1;
+
+  // Build SVG polyline points
+  const width = 800;
+  const height = 140;
+  const points = curve
+    .map((p, i) => {
+      const x = (i / (curve.length - 1)) * width;
+      const y = height - ((p.equity - min) / range) * (height - 10) - 5;
+      return `${x},${y}`;
+    })
+    .join(" ");
+
+  // Baseline (initial capital)
+  const baselineY = height - ((initialCapital - min) / range) * (height - 10) - 5;
+
+  const lastEquity = equities[equities.length - 1];
+  const lineColor = lastEquity >= initialCapital ? "#22c55e" : "#ef4444";
+
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full" preserveAspectRatio="none">
+      {/* Baseline */}
+      <line x1="0" y1={baselineY} x2={width} y2={baselineY} stroke="rgba(100,100,120,0.2)" strokeDasharray="4" />
+      {/* Equity line */}
+      <polyline fill="none" stroke={lineColor} strokeWidth="2" points={points} />
+      {/* Fill below line */}
+      <polygon
+        fill={lastEquity >= initialCapital ? "rgba(34,197,94,0.08)" : "rgba(239,68,68,0.08)"}
+        points={`0,${height} ${points} ${width},${height}`}
+      />
+    </svg>
+  );
+}
+
+// ─── Funding badge ───────────────────────────────────────────
+
+function FundingBadge({ label, passes, maxDD, maxDailyDD }: { label: string; passes: boolean; maxDD: string; maxDailyDD: string }) {
+  return (
+    <div className={cn(
+      "rounded-lg border p-3 text-center",
+      passes ? "border-success/30 bg-success/5" : "border-danger/30 bg-danger/5"
+    )}>
+      <p className={cn("text-sm font-bold", passes ? "text-success" : "text-danger")}>
+        {passes ? "PASS" : "FAIL"}
+      </p>
+      <p className="text-xs font-medium mt-0.5">{label}</p>
+      <p className="text-[9px] text-muted-foreground/50 mt-1">
+        Max DD: {maxDD} · Daily: {maxDailyDD}
+      </p>
     </div>
   );
 }

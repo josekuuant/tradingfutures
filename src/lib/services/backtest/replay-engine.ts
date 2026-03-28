@@ -146,7 +146,7 @@ export async function runBacktest(
     }
 
     // Calculate results
-    const results = calculateResults(signals);
+    const results = calculateResults(signals, config);
     const completedAt = new Date().toISOString();
 
     await db
