@@ -235,9 +235,9 @@ export const PROVIDER_CONFIGS: ProviderConfig[] = [
     environments: ["demo", "production"],
     fields: [
       { key: "mode", label: "Connection Mode", type: "select", placeholder: "", required: false, options: [
-        { value: "native_api", label: "Native ATI API" },
-        { value: "desktop_bridge", label: "Desktop Bridge (coming soon)" },
-      ], helpText: "ATI requires NinjaTrader running locally" },
+        { value: "crosstrade", label: "CrossTrade REST API" },
+        { value: "custom_bridge", label: "Custom Bridge" },
+      ], helpText: "CrossTrade: third-party NT8 REST add-on. Requires NinjaTrader 8 desktop running." },
       { key: "host", label: "Host", type: "text", placeholder: "localhost", required: false, helpText: "NinjaTrader machine address" },
       { key: "port", label: "Port", type: "number", placeholder: "36973", required: false, helpText: "ATI server port" },
       { key: "apiKey", label: "API Key", type: "password", placeholder: "Optional — for cloud API", required: false },
