@@ -163,8 +163,16 @@ export function StrategyCard({
           <DetailSection label="News Filter" value={strategy.newsFilter} />
           <DetailSection label="No-Trade Rules" value={strategy.noTradeRules} />
           {strategy.promptTemplate && (
-            <DetailSection label="Claude Prompt" value={strategy.promptTemplate} mono />
+            <DetailSection label="Claude Prompt (inline)" value={strategy.promptTemplate} mono />
           )}
+          <div className="px-4 py-2 border-t border-border/30">
+            <a
+              href="/prompt-studio"
+              className="text-[10px] text-primary hover:underline"
+            >
+              Edit prompts in detail →
+            </a>
+          </div>
         </div>
       )}
     </div>

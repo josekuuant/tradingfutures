@@ -129,7 +129,7 @@ export default function PromptStudioPage() {
             <MessageSquareCode className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold">Prompt Studio</h2>
+            <h2 className="text-lg font-semibold">Prompts</h2>
             <p className="text-sm text-muted-foreground">
               {activePrompt
                 ? `Active: ${activePrompt.name} (v${activePrompt.version})`
