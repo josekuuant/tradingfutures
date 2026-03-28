@@ -62,9 +62,11 @@ const PROVIDER_NAMES: Record<string, { name: string; description: string }> = {
 export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchDashboard = useCallback(async () => {
     try {
+      setError(null);
       const [connRes, sigRes, stratRes, engineRes, healthRes, logsRes] = await Promise.all([
         fetch("/api/connections").then((r) => r.ok ? r.json() : []).catch(() => []),
         fetch("/api/signals").then((r) => r.ok ? r.json() : []).catch(() => []),
@@ -83,7 +85,7 @@ export default function DashboardPage() {
         recentLogs: logsRes.logs ?? [],
       });
     } catch {
-      // Best effort — partial data is fine
+      setError("Failed to load dashboard data");
     } finally {
       setLoading(false);
     }
@@ -154,6 +156,13 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <MockDataBanner />
+
+      {error && (
+        <div className="rounded-md bg-danger/10 px-4 py-3 text-sm text-danger">
+          {error}
+          <button onClick={fetchDashboard} className="ml-2 underline">Retry</button>
+        </div>
+      )}
 
       {/* Row 1: Connection Status */}
       <div className="grid gap-4 sm:grid-cols-3">
