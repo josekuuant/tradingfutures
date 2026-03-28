@@ -15,10 +15,11 @@ const BASE_URL = "https://hist.databento.com/v0";
 const DATASET = "GLBX.MDP3";
 const REQUEST_TIMEOUT = 15_000;
 
-/** Map our Instrument type to Databento symbol format */
+/** Map our Instrument type to Databento continuous contract symbol */
 function toSymbol(instrument: Instrument): string {
-  // Continuous front-month contract
-  return `${instrument}.FUT`;
+  // Databento continuous contracts use .c.0 (calendar roll, front month)
+  // NOT .FUT (parent symbology — returns ALL contracts, not continuous)
+  return `${instrument}.c.0`;
 }
 
 /** Map our Timeframe to Databento OHLCV schema */
@@ -122,10 +123,12 @@ export class DatabentoAdapter implements MarketDataAdapter {
     // Databento prices are in fixed-point (divide by 1e9 for MDP3)
     const pxFactor = 1e-9;
 
-    const bidPrice = (record.levels?.[0]?.bid_px ?? record.bid_px_00 ?? 0) * pxFactor;
-    const askPrice = (record.levels?.[0]?.ask_px ?? record.ask_px_00 ?? 0) * pxFactor;
-    const bidSize = record.levels?.[0]?.bid_sz ?? record.bid_sz_00 ?? 0;
-    const askSize = record.levels?.[0]?.ask_sz ?? record.ask_sz_00 ?? 0;
+    // MBP-1 JSON uses levels array with single entry: levels[0].{bid_px, ask_px, bid_sz, ask_sz}
+    const level = record.levels?.[0];
+    const bidPrice = (level?.bid_px ?? 0) * pxFactor;
+    const askPrice = (level?.ask_px ?? 0) * pxFactor;
+    const bidSize = level?.bid_sz ?? 0;
+    const askSize = level?.ask_sz ?? 0;
     const lastPrice = record.price ? record.price * pxFactor : (bidPrice + askPrice) / 2;
 
     return {
@@ -314,10 +317,6 @@ interface DatabentoMbp1 extends DatabentoRecord {
   price?: number;
   size?: number;
   volume?: number;
-  bid_px_00?: number;
-  ask_px_00?: number;
-  bid_sz_00?: number;
-  ask_sz_00?: number;
   levels?: Array<{
     bid_px: number;
     ask_px: number;

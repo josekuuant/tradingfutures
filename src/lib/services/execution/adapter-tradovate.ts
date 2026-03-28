@@ -18,7 +18,7 @@ const BASE_URLS = {
 } as const;
 
 const TOKEN_LIFETIME_MS = 90 * 60 * 1000;    // 90 min
-const REFRESH_BEFORE_MS = 5 * 60 * 1000;     // refresh 5 min before expiry
+const REFRESH_BEFORE_MS = 15 * 60 * 1000;    // refresh 15 min before expiry (Tradovate recommendation)
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 1500;
 
