@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
+import { AuthGate } from "@/components/auth/auth-gate";
 
 export const metadata: Metadata = {
   title: "TradingFutures",
@@ -16,11 +17,13 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className="font-sans">
-        <Sidebar />
-        <div className="min-h-screen lg:ml-60">
-          <Header />
-          <main className="p-6">{children}</main>
-        </div>
+        <AuthGate>
+          <Sidebar />
+          <div className="min-h-screen lg:ml-60">
+            <Header />
+            <main className="p-6">{children}</main>
+          </div>
+        </AuthGate>
       </body>
     </html>
   );

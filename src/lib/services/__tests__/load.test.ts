@@ -24,7 +24,7 @@ async function measureAsync(fn: () => Promise<void>): Promise<number> {
 describe("Rate Limiter — throughput", () => {
   it("handles 10,000 checkRateLimit calls in < 100ms", async () => {
     // Dynamic import to avoid module cache issues
-    const { checkRateLimit, recordEvent } = await import("@/lib/rate-limiter");
+    const { checkRateLimit } = await import("@/lib/rate-limiter");
 
     const ms = measure(() => {
       for (let i = 0; i < 10_000; i++) {
