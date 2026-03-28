@@ -175,11 +175,39 @@ Analyze these results and propose specific improvements. Remember: small targete
       );
     }
 
+    // Normalize optimization response
+    optimization.analysis = String(optimization.analysis ?? "");
+    optimization.changesSummary = Array.isArray(optimization.changesSummary) ? optimization.changesSummary : [];
+    optimization.isOptimal = Boolean(optimization.isOptimal ?? optimization.is_optimal);
+    optimization.confidenceInChanges = Number(optimization.confidenceInChanges ?? optimization.confidence_in_changes ?? optimization.confidence ?? 0);
+    optimization.recommendation = String(optimization.recommendation ?? "");
+
     // Auto-apply changes if requested and Claude is confident enough
     // Threshold: 60% confidence minimum to auto-apply
     if (autoApply && !optimization.isOptimal && optimization.confidenceInChanges >= 0.6) {
       if (optimization.changes?.strategy) {
-        await updateStrategy(strategyId, optimization.changes.strategy);
+        // Normalize field names: snake_case → camelCase
+        const sc = optimization.changes.strategy as Record<string, unknown>;
+        const normalized: Record<string, unknown> = {};
+        const fieldMap: Record<string, string> = {
+          context_conditions: "contextConditions",
+          entry_conditions: "entryConditions",
+          take_profit_1: "tp1",
+          take_profit_2: "tp2",
+          min_rr: "minRR",
+          min_r_r: "minRR",
+          volatility_filter: "volatilityFilter",
+          volume_filter: "volumeFilter",
+          schedule_filter: "scheduleFilter",
+          news_filter: "newsFilter",
+          no_trade_rules: "noTradeRules",
+          prompt_template: "promptTemplate",
+        };
+        for (const [k, v] of Object.entries(sc)) {
+          const mapped = fieldMap[k] ?? k;
+          normalized[mapped] = v;
+        }
+        await updateStrategy(strategyId, normalized);
         log.engine.info("Auto-applied strategy changes", {
           fields: Object.keys(optimization.changes.strategy),
         });

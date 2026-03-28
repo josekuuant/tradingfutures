@@ -104,9 +104,9 @@ export async function POST(req: NextRequest) {
 
     const jsonStr = extractJsonFromResponse(textBlock.text);
 
-    let result;
+    let raw;
     try {
-      result = JSON.parse(jsonStr);
+      raw = JSON.parse(jsonStr);
     } catch {
       log.engine.error("Prompt Designer JSON parse failed", {
         extractedFirst100: jsonStr.slice(0, 100),
@@ -116,6 +116,19 @@ export async function POST(req: NextRequest) {
         { status: 500 }
       );
     }
+
+    // Normalize: force into exact shape the API expects
+    const p = raw.prompt ?? raw;
+
+    const result = {
+      name: String(p.name ?? "AI Prompt").slice(0, 200),
+      description: String(p.description ?? "AI-designed prompt"),
+      tag: String(p.tag ?? ""),
+      systemPrompt: "", // always empty — platform uses institutional prompt
+      userPromptTemplate: String(p.userPromptTemplate ?? p.user_prompt_template ?? p.user_prompt ?? p.template ?? p.prompt ?? ""),
+      outputSchema: String(p.outputSchema ?? p.output_schema ?? ""),
+      outputValidationRules: String(p.outputValidationRules ?? p.output_validation_rules ?? p.validation_rules ?? ""),
+    };
 
     log.engine.info("AI Prompt Designer completed", { name: result.name });
     return NextResponse.json(result);

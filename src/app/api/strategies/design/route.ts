@@ -107,12 +107,11 @@ export async function POST(req: NextRequest) {
 
     const jsonStr = extractJsonFromResponse(textBlock.text);
 
-    let result;
+    let raw;
     try {
-      result = JSON.parse(jsonStr);
+      raw = JSON.parse(jsonStr);
     } catch {
       log.engine.error("Strategy Designer JSON parse failed", {
-        rawLength: textBlock.text.length,
         extractedFirst100: jsonStr.slice(0, 100),
       });
       return NextResponse.json(
@@ -121,8 +120,42 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Normalize: force Claude's output into the EXACT shape the APIs expect
+    const s = raw.strategy ?? raw;
+    const p = raw.prompt ?? {};
+
+    const result = {
+      strategy: {
+        name: String(s.name ?? s.strategy_name ?? "AI Strategy").slice(0, 200),
+        description: String(s.description ?? "").slice(0, 5000),
+        tag: String(s.tag ?? s.label ?? "").slice(0, 30),
+        instrument: s.instrument === "MNQ" ? "MNQ" : "NQ",
+        timeframes: Array.isArray(s.timeframes) ? s.timeframes : [String(s.timeframes ?? s.timeframe ?? "5m")],
+        contextConditions: String(s.contextConditions ?? s.context_conditions ?? s.context ?? ""),
+        entryConditions: String(s.entryConditions ?? s.entry_conditions ?? s.entry ?? ""),
+        invalidation: String(s.invalidation ?? s.invalidation_condition ?? ""),
+        tp1: String(s.tp1 ?? s.take_profit_1 ?? s.takeProfit1 ?? ""),
+        tp2: String(s.tp2 ?? s.take_profit_2 ?? s.takeProfit2 ?? ""),
+        minRR: Number(s.minRR ?? s.min_rr ?? s.rr ?? 2) || 2,
+        volatilityFilter: String(s.volatilityFilter ?? s.volatility_filter ?? s.volatility ?? ""),
+        volumeFilter: String(s.volumeFilter ?? s.volume_filter ?? s.volume ?? ""),
+        scheduleFilter: String(s.scheduleFilter ?? s.schedule_filter ?? s.schedule ?? ""),
+        newsFilter: String(s.newsFilter ?? s.news_filter ?? s.news ?? ""),
+        noTradeRules: String(s.noTradeRules ?? s.no_trade_rules ?? s.noTrade ?? ""),
+      },
+      prompt: {
+        name: String(p.name ?? `${s.name ?? "AI"} Prompt`).slice(0, 200),
+        description: String(p.description ?? "AI-designed prompt"),
+        tag: String(p.tag ?? s.tag ?? ""),
+        systemPrompt: "", // always empty — platform uses institutional prompt
+        userPromptTemplate: String(p.userPromptTemplate ?? p.user_prompt_template ?? p.user_prompt ?? p.template ?? ""),
+        outputSchema: String(p.outputSchema ?? p.output_schema ?? ""),
+        outputValidationRules: String(p.outputValidationRules ?? p.output_validation_rules ?? ""),
+      },
+    };
+
     log.engine.info("AI Strategy Designer completed", {
-      strategyName: result.strategy?.name,
+      strategyName: result.strategy.name,
     });
 
     return NextResponse.json(result);
